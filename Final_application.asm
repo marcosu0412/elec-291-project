@@ -369,7 +369,7 @@ inc_reflow_time:
 	mov a, rtime
 	add a, #0x01
 	da a
-	cjne a, #0x
+	cjne a, #0x420
  
 Displaymain:
       
