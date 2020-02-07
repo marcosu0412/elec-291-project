@@ -219,10 +219,7 @@ main:
 	; After initialization the program stays in this 'forever' loop
 	lcall Default_state ;starts off in default display screen until button pressed
 loop:
-	
-;-------------------------------------------------------------------------------
-; non-blocking state machine for KEY1 starts here
-
+        
 Default_state:
     jb button_state, Default_state; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
@@ -287,7 +284,7 @@ soak_temp_done:
 	jnb button_state, $
     
 	inc adjust_state
-	ljmp param_adjust
+	ljmp loop
      
 
 
@@ -324,17 +321,17 @@ soak_time_done:
     jb button_state, soak_time
     Wait_Milli_Seconds(#50)	
     jb button_state, soak_time
-	jnb button_state, $
+    jnb button_state, $
     
-	inc adjust_state
-	ljmp param_adjust
+    inc adjust_state
+    ljmp loop
 
 reflow_temp:
     jb button_updown, param_adjust //check if button_down is pressed. 
     Wait_Milli_Seconds(#50)	
     jb button_updown, param_adjust
     jnb button_updown, $
-	jb sw_updown, dec_reflow_temp
+    jb sw_updown, dec_reflow_temp
 	
 inc_reflow_temp:
     mov a, rtemp
@@ -364,7 +361,7 @@ reflow_temp_done:
     jnb button_state, $
     
     inc adjust_state
-    ljmp param_adjust 
+    ljmp loop 
 
 reflow_time:
     jb button_updown, param_adjust
@@ -400,7 +397,7 @@ reflow_time_done:
 	jnb button_state, $
 	
 	mov adjust_state, #0
-	ljmp param_adjust
+	ljmp loop
  
 Displaymain:
       
