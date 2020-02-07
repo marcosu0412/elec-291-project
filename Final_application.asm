@@ -51,6 +51,9 @@ rtime: ds 2   ; reflow time
 adjust_state: ds 1
 displayed_state: ds 1
 
+setsoaktime:
+DB 'set soak time', 0
+
 ; Reset vector
 org 0x0000
     ljmp main
@@ -218,6 +221,7 @@ main:
 	sjmp default_state
 	; After initialization the program stays in this 'forever' loop
 	lcall Default_state ;starts off in default display screen until button pressed
+
 loop: 
         
         
@@ -401,6 +405,15 @@ reflow_time_done:
 	ljmp loop
  
 Displaymain:
+
+Display_soak_time:
+        Set_Cursor(1,1)
+	Send_Constant_String(#setsoaktime)
+	Display_BCD(stime)
+	ljmp soak_time
+
+Display_soak_temperature:
+     
         
       
       
