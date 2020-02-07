@@ -224,12 +224,12 @@ loop:
 ; non-blocking state machine for KEY1 starts here
 
 Default_state:
-    jb button_state, Default_state; if the 'button_updown' button is not pressed skip
+        jb button_state, Default_state; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb button_state, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_state, $
 	jb sw_start_stop, param_adjust ;if switch down, adjust parameters	
-    ljmp Displaymain
+        ljmp Displaymain
       
 param_adjust:
     	jb button_state, param_adjust 
@@ -271,7 +271,7 @@ inc_soak_temp_1:
     
 dec_soak_temp:
     mov a, stemp
-    dec a, #0x01
+    dec a
     da a
     cjne a, #0x130,dec_soak_time_1
     mov a, #0x170
@@ -282,12 +282,12 @@ dec_soak_temp_1:
     
 soak_temp_done:    
     jb button_state, soak_temp
-	Wait_Milli_Seconds(#50)	
-	jb button_state, soak_temp 
-	jnb button_state, $
+    Wait_Milli_Seconds(#50)	
+    jb button_state, soak_temp 
+    jnb button_state, $
     
-	inc adjust_state
-	ljmp param_adjust
+    inc adjust_state
+    ljmp param_adjust
      
 
 
@@ -311,7 +311,7 @@ inc_soak_time_1:
     
 dec_soak_time:
     mov a, stime
-    dec a, #0x01
+    dec a
     da a
     cjne a, #0x60,dec_soak_time_1
     mov a, #0x90
@@ -324,10 +324,10 @@ soak_time_done:
     jb button_state, soak_time
     Wait_Milli_Seconds(#50)	
     jb button_state, soak_time
-	jnb button_state, $
+    jnb button_state, $
     
-	inc adjust_state
-	ljmp param_adjust
+    inc adjust_state
+    ljmp param_adjust
 
 reflow_temp:
     jb button_updown, param_adjust //check if button_down is pressed. 
@@ -349,7 +349,7 @@ inc_reflow_temp_1:
     
 dec_reflow_temp:
     mov a, rtemp
-    dec a, #0x01
+    dec a
     da a
     cjne a, #0x219, dec_reflow_temp_1
     mov a, #0x230
@@ -380,6 +380,7 @@ inc_reflow_time:
 	cjne a, #0x
  
 Displaymain:
+      
       
       
 
