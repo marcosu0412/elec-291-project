@@ -218,15 +218,16 @@ main:
 	sjmp default_state
 	; After initialization the program stays in this 'forever' loop
 	lcall Default_state ;starts off in default display screen until button pressed
-loop:
+loop: 
+        
         
 Default_state:
-    jb button_state, Default_state; if the 'button_updown' button is not pressed skip
+        jb button_state, Default_state; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb button_state, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_state, $
 	jb sw_start_stop, param_adjust ;if switch down, adjust parameters	
-    ljmp Displaymain
+        ljmp Displaymain
       
 param_adjust:
     	jb button_state, param_adjust 
@@ -400,6 +401,7 @@ reflow_time_done:
 	ljmp loop
  
 Displaymain:
+        
       
       
 
