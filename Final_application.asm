@@ -217,46 +217,47 @@ main:
 	mov rtime, #45   ; reflow time   
 	sjmp default_state
 	; After initialization the program stays in this 'forever' loop
+	lcall Default_state ;starts off in default display screen until button pressed
 loop:
-
+	
 ;-------------------------------------------------------------------------------
 ; non-blocking state machine for KEY1 starts here
-Default_state:
 
-    jb button_updown, Default_state; if the 'button_updown' button is not pressed skip
+Default_state:
+    jb button_state, Default_state; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb button_updown, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
-	jnb button_updown, $
-	jb sw_start_stop, Param_adjust ;if switch down, adjust parameters	
+	jb button_state, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
+	jnb button_state, $
+	jb sw_start_stop, param_adjust ;if switch down, adjust parameters	
     ljmp Displaymain
       
 param_adjust:
-	jnb sw_start_stop, Displaymain
-    jb button_state, param_adjust 
+    	jb button_state, param_adjust 
 	Wait_Milli_Seconds(#50)	
 	jb button_state, param_adjust 
 	jnb button_state, $
-    
 	cjne 	adjust_state, #0, check1 ;jump if bit set (switch down)
 	ljmp 	soak_temp
 check1:
 	cjne adjust_state, #1, check2
 	ljmp soak_time
 check2:
-    cjne adjust_state, #2, check3
-    ljmp reflow_temp
+	cjne adjust_state, #2, check3
+	ljmp reflow_temp
+    
 check3:
-    ljmp reflow_time
-    ret     
+  	ljmp reflow_time
+        ret     
+    
 ;in each of these, change display and read button_updown to adjust
 ;also read button_state to inc adjust_state
 soak_temp:
-    jb button_updown, soak_temp //check if button_down is pressed. 
+    jb button_updown, param_adjust //check if button_down is pressed. 
 	Wait_Milli_Seconds(#50)	
-	jb button_updown, soak_temp
+	jb button_updown, param_adjust
 	jnb button_updown, $
-    
-	jb sw_updown, dec_soak_temp
+    	jb sw_updown, dec_soak_temp
+	
 inc_soak_temp:
     mov a, stemp
     add a, #0x01
@@ -267,6 +268,7 @@ inc_soak_temp:
     ljmp soak_temp_done
 inc_soak_temp_1:
     ljmp soak_temp_done
+    
 dec_soak_temp:
     mov a, stemp
     dec a, #0x01
@@ -277,6 +279,7 @@ dec_soak_temp:
     ljmp soak_temp_done
 dec_soak_temp_1:
     ljmp soak_temp_done
+    
 soak_temp_done:    
     jb button_state, soak_temp
 	Wait_Milli_Seconds(#50)	
@@ -289,9 +292,9 @@ soak_temp_done:
 
 
 soak_time:
-    jb button_updown, soak_time //check if button_down is pressed. 
+    jb button_updown, param_adjust //check if button_down is pressed. 
     Wait_Milli_Seconds(#50)	
-    jb button_updown, soak_time
+    jb button_updown, param_adjust
     jnb button_updown, $
     
     jb sw_updown, dec_soak_time
@@ -305,6 +308,7 @@ inc_soak_time:
     ljmp soak_time_done
 inc_soak_time_1:
     ljmp soak_time_done
+    
 dec_soak_time:
     mov a, stime
     dec a, #0x01
@@ -315,6 +319,7 @@ dec_soak_time:
     ljmp soak_temp_done
 dec_soak_time_1:
     ljmp soak_time_done 
+    
 soak_time_done:
     jb button_state, soak_time
     Wait_Milli_Seconds(#50)	
@@ -325,12 +330,12 @@ soak_time_done:
 	ljmp param_adjust
 
 reflow_temp:
-    jb button_updown, reflow_temp //check if button_down is pressed. 
+    jb button_updown, param_adjust //check if button_down is pressed. 
     Wait_Milli_Seconds(#50)	
-    jb button_updown, reflow_temp
+    jb button_updown, param_adjust
     jnb button_updown, $
-    
 	jb sw_updown, dec_reflow_temp
+	
 inc_reflow_temp:
     mov a, rtemp
     add a, #0x01
@@ -341,6 +346,7 @@ inc_reflow_temp:
     ljmp reflow_temp_done
 inc_reflow_temp_1:
     ljmp reflow_temp_done
+    
 dec_reflow_temp:
     mov a, rtemp
     dec a, #0x01
@@ -352,7 +358,18 @@ dec_reflow_temp:
 dec_reflow_temp_1:
     ljmp soak_time_done    
 
-reflow_time
+reflow_time:
+	jb button_updown, param_adjust
+	Wait_Milli_Seconds(#50)
+	jb button_updown, param_adjust
+	jnb button_updown, $
+	jb sw_updown, dec_reflow_time
+	
+inc_reflow_time:
+	mov a, rtime
+	add a, #0x01
+	da a
+	cjne a, #0x
  
 Displaymain:
       
