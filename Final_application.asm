@@ -342,7 +342,7 @@ inc_reflow_temp:
     da a
     cjne a, #0x230, inc_soak_time_1
     mov a, #0x219
-    mov stime, a
+    mov rtemp, a
     ljmp reflow_temp_done
 inc_reflow_temp_1:
     ljmp reflow_temp_done
@@ -351,25 +351,33 @@ dec_reflow_temp:
     mov a, rtemp
     dec a, #0x01
     da a
-    cjne a, #0x219,dec_reflow_temp_1
+    cjne a, #0x219, dec_reflow_temp_1
     mov a, #0x230
-    mov stime, a
-    ljmp soak_temp_done
+    mov rtemp, a
+    ljmp reflow_temp_done
 dec_reflow_temp_1:
-    ljmp soak_time_done    
+    ljmp reflow_temp_done    
+reflow_temp_done:
+    jb button_state, reflow_temp
+    Wait_Milli_Seconds(#50)	
+    jb button_state, reflow_temp
+    jnb button_state, $
+    
+    inc adjust_state
+    ljmp param_adjust 
 
 reflow_time:
-	jb button_updown, param_adjust
-	Wait_Milli_Seconds(#50)
-	jb button_updown, param_adjust
-	jnb button_updown, $
-	jb sw_updown, dec_reflow_time
+    jb button_updown, param_adjust
+    Wait_Milli_Seconds(#50)
+    jb button_updown, param_adjust
+    jnb button_updown, $
+    jb sw_updown, dec_reflow_time
 	
 inc_reflow_time:
 	mov a, rtime
 	add a, #0x01
 	da a
-	cjne a, #0x420
+	cjne a, #0x
  
 Displaymain:
       
