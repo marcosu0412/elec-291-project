@@ -52,7 +52,16 @@ adjust_state: ds 1
 displayed_state: ds 1
 
 setsoaktime:
-DB 'set soak time', 0
+DB 'Soak Time', 0
+
+setsoaktemperature:
+DB 'Soak Temperature',0
+
+setreflowtemperature:
+DB 'Reflow Temperature' 0
+
+setreflowtime:
+DB 'Reflow Time', 0
 
 ; Reset vector
 org 0x0000
@@ -405,16 +414,36 @@ reflow_time_done:
 	ljmp loop
  
 Displaymain:
+    
 
 Display_soak_time:
-        Set_Cursor(1,1)
+    Set_Cursor(1,1)
 	Send_Constant_String(#setsoaktime)
+	Set_Cursor(2,1)
 	Display_BCD(stime)
 	ljmp soak_time
 
 Display_soak_temperature:
-     
-        
+    Set_Cursor(1,1)
+	Send_Constant_String(#setsoaktemperature)
+	Set_Cursor(2,1)
+	Display_BCD(stemp)
+	ljmp soak_temp
+
+Display_reflow_temperature:
+    Set_Cursor(1,1)
+	Send_Constant_String(#setreflowtemperature)    
+	Set_Cursor(2,1)
+	Display_BCD(rtemp)
+	ljmp reflow_temp
+
+Display_reflow_time:
+    Set_Cursor(1,1)
+	Send_Constant_String(#setreflowtime) 
+	Set_Cursor(2,1)   
+	Display_BCD(rtime)
+	ljmp reflow_time
+    
       
       
 
