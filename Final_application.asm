@@ -10,6 +10,16 @@ $NOLIST
 $MODDE1SOC
 $LIST
 
+$NOLIST
+$include(LCD_4bit.inc)
+$LIST
+
+
+$NOLIST
+$include(math32.inc)
+$LIST
+
+
 CLK           EQU 33333333 ; Microcontroller system crystal frequency in Hz
 TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/(12*TIMER2_RATE))))
@@ -280,11 +290,11 @@ soak_temp_done:
 
 soak_time:
     jb button_updown, soak_time //check if button_down is pressed. 
-	Wait_Milli_Seconds(#50)	
-	jb button_updown, soak_time
-	jnb button_updown, $
+    Wait_Milli_Seconds(#50)	
+    jb button_updown, soak_time
+    jnb button_updown, $
     
-	jb sw_updown, dec_soak_time
+    jb sw_updown, dec_soak_time
 inc_soak_time:
     mov a, stime
     add a, #0x01
@@ -307,8 +317,8 @@ dec_soak_time_1:
     ljmp soak_time_done 
 soak_time_done:
     jb button_state, soak_time
-	Wait_Milli_Seconds(#50)	
-	jb button_state, soak_time
+    Wait_Milli_Seconds(#50)	
+    jb button_state, soak_time
 	jnb button_state, $
     
 	inc adjust_state
@@ -316,9 +326,9 @@ soak_time_done:
 
 reflow_temp:
     jb button_updown, reflow_temp //check if button_down is pressed. 
-	Wait_Milli_Seconds(#50)	
-	jb button_updown, reflow_temp
-	jnb button_updown, $
+    Wait_Milli_Seconds(#50)	
+    jb button_updown, reflow_temp
+    jnb button_updown, $
     
 	jb sw_updown, dec_reflow_temp
 inc_reflow_temp:
