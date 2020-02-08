@@ -419,6 +419,16 @@ reflow_time_done:
 	ljmp loop
  
 Oven_Control:
+
+state1: 	;Ramp to Soak
+
+state2: 	;Soak
+
+state3:		;Ramp to Peak
+
+state4:		;Peak
+
+state5:		;Cooling
     
 
 Display_soak_time:
