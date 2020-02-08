@@ -156,7 +156,7 @@ InitSerialPort:
 	mov	P1M2,#0x00 ; Enable pins RxD and TXD
 	ret
 
-InitADC0:
+InitADC:
 	; ADC0_0 is connected to P1.7
 	; ADC0_1 is connected to P0.0
 	; ADC0_2 is connected to P2.1
@@ -174,10 +174,9 @@ InitADC0:
 	mov	ADINS,#0x0f ; Select the four channels of ADC0 for conversion
 	mov	ADCON0,#0x05 ; Enable the converter and start immediately
 	; Wait for first conversion to complete
-
-InitADC0_L1:
+InitADC_L1:
 	mov	a,ADCON0
-	jnb	acc.3,InitADC0_L1
+	jnb	acc.3,InitADC
 	ret
 
 ; Look-up table for the 7-seg displays. (Segments are turn on with zero) 
