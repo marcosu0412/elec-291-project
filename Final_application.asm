@@ -38,18 +38,20 @@ sw_updown     equ P0.3
 button_updown equ P0.4
 button_state  equ P0.5
 
-bseg
-soak_flag:   dbit 1 ;
-reflow_flag: dbit 1; 
+;change ports later when configuration is figured out
+TEMP_IN 	equ P2.4
+POWER_OUT 	equ P2.5
+
 
 dseg at 0x30
 Count1ms: ds 2; Used to determine when half a second has passed
 ctemp: ds 2   ; current temperature
+ctime: ds 2   ; current time
+
 rtemp: ds 2   ; reflow  temperature
 stemp: ds 2   ; soak temperature
-ctime: ds 2   ; current time
-stime: ds 2   ; soak time
 rtime: ds 2   ; reflow time
+stime: ds 2   ; soak time
 
 adjust_state: ds 1
 displayed_state: ds 1
@@ -214,18 +216,18 @@ Hex_to_bcd_8bit:
 ;---------------------------------;
 main:
 	; Initialization of hardware
-    mov SP, #0x7F
-    lcall Timer2_Init
-    ; Turn off all the LEDs
-    ; mov LEDRA, #0 ; LEDRA is bit addressable
-    ; mov LEDRB, #0 ; LEDRB is NOT bit addresable
-    setb EA   ; Enable Global interrupts
+	mov SP, #0x7F
+	lcall Timer2_Init
+	; Turn off all the LEDs
+	; mov LEDRA, #0 ; LEDRA is bit addressable
+	; mov LEDRB, #0 ; LEDRB is NOT bit addresable
+	setb EA   ; Enable Global interrupts
     
-    ; Initialize variables
+    	; Initialize variables
 	mov adjust_state, #0
 	mov displayed_state, #0
-    mov ctemp #0
-    mov rtemp, #217   ; minimum reflow  temperature
+	mov ctemp #0
+   	mov rtemp, #217   ; minimum reflow  temperature
 	mov stemp, #130   ; minimum soak temperature
 	mov ctime, #0   ; current time
 	mov stime, #60  ; soak time
@@ -422,10 +424,13 @@ reflow_time_done:
 	ljmp loop
  
 Oven_Control:
+;in each state, set power (0,20,100)
+;set timer for soak and peak states (count down every second, set flag at 0, transition state if flag set)
+;measure temperature, set flag when predefined soak/ramp temperature reached, transition state 
 
-state1:  	;Ramp to Soak
-       
 
+state1: 	;Ramp to Soak
+	mov 
 
 state2: 	;Soak
 
