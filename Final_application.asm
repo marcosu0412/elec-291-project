@@ -61,6 +61,13 @@ stime: ds 2   ; soak time
 adjust_state: ds 1
 displayed_state: ds 1
 
+x: ds 4 ;for use in math32
+y: ds 4
+bcd: ds 5
+
+bseg
+mf: dbit 1
+
 setsoaktime:
 DB 'Soak Time', 0
 
