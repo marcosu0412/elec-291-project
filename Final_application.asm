@@ -24,6 +24,9 @@ CLK           EQU 14746000 ; Microcontroller system crystal frequency in Hz
 TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/(12*TIMER2_RATE))))
 PEAK_TEMPERATURE EQU 260
+XTAL EQU 7373000
+BAUD EQU 115200
+BRVAL EQU ((XTAL/BAUD)-16)
 
 LCD_RS equ P0.7
 LCD_RW equ P3.0
@@ -37,6 +40,8 @@ sw_start_stop equ P0.0
 sw_updown     equ P0.3
 button_updown equ P0.4
 button_state  equ P0.5
+
+
 
 ;change ports later when configuration is figured out
 TEMP_IN 	equ P2.4
@@ -78,11 +83,12 @@ org 0x002B
 
 
 bseg
-; For each time/temperature variable have a flag
-; flags to one when a measured time/temperature reach the value
-Key1_flag: dbit 1
-Key2_flag: dbit 1
-Key3_flag: dbit 1
+; For each pushbutton we have a flag.  The corresponding FSM will set this
+; flags to one when a valid press of the pushbutton is detected.
+soak_time_flag:         dbit 1
+soak_temp_flag:         dbit 1
+reflow_time_flag:       dbit 1
+reflow_temp_flag:       dbit 1
 
 cseg
 ;---------------------------------;
@@ -138,6 +144,40 @@ Timer2_ISR_done:
 	pop psw
 	pop acc
 	reti
+
+InitSerialPort:
+	mov	BRGCON,#0x00
+	mov	BRGR1,#high(BRVAL)
+	mov	BRGR0,#low(BRVAL)
+	mov	BRGCON,#0x03 ; Turn-on the baud rate generator
+	mov	SCON,#0x52 ; Serial port in mode 1, ren, txrdy, rxempty
+	mov	P1M1,#0x00 ; Enable pins RxD and TXD
+	mov	P1M2,#0x00 ; Enable pins RxD and TXD
+	ret
+
+InitADC0:
+	; ADC0_0 is connected to P1.7
+	; ADC0_1 is connected to P0.0
+	; ADC0_2 is connected to P2.1
+	; ADC0_3 is connected to P2.0
+    ; Configure pins P1.7, P0.0, P2.1, and P2.0 as inputs
+    orl P0M1, #00000001b
+    anl P0M2, #11111110b
+    orl P1M1, #10000000b
+    anl P1M2, #01111111b
+    orl P2M1, #00000011b
+    anl P2M2, #11111100b
+	; Setup ADC0
+	setb BURST0 ; Autoscan continuos conversion mode
+	mov	ADMODB,#0x20 ;ADC0 clock is 7.3728MHz/2
+	mov	ADINS,#0x0f ; Select the four channels of ADC0 for conversion
+	mov	ADCON0,#0x05 ; Enable the converter and start immediately
+	; Wait for first conversion to complete
+
+InitADC0_L1:
+	mov	a,ADCON0
+	jnb	acc.3,InitADC0_L1
+	ret
 
 ; Look-up table for the 7-seg displays. (Segments are turn on with zero) 
 T_7seg:
@@ -226,12 +266,17 @@ main:
     	; Initialize variables
 	mov adjust_state, #0
 	mov displayed_state, #0
-	mov ctemp #0
-   	mov rtemp, #217   ; minimum reflow  temperature
-	mov stemp, #130   ; minimum soak temperature
-	mov ctime, #0   ; current time
-	mov stime, #60  ; soak time
-	mov rtime, #45   ; reflow time   
+	mov ctemp, #0
+   	mov rtemp, #0x17   ; minimum reflow  temperature
+	mov rtemp+1, #0x02;
+	mov stemp, #0x30   ; minimum soak temperature
+	mov stemp+1, #0x01
+	mov ctime, #0x00   ; current time
+	mov ctime+1, #0x00
+	mov stime, #0x60  ; soak time
+	mov stime+1, #0x00
+	mov rtime, #0x45   ; reflow time   
+	mov rtime+1, #0x00
 	sjmp default_state
 	; After initialization the program stays in this 'forever' loop
 	lcall Default_state ;starts off in default display screen until button pressed
@@ -245,15 +290,15 @@ loop:
         
 Default_state:
 	;set power to 0 (turn off oven)
-        jb button_state, Default_state; if the 'button_updown' button is not pressed skip
+    jb button_state, Default_state; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb button_state, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_state, $
 	jb sw_start_stop, param_adjust ;if switch down, adjust parameters	
-        ljmp Displaymain
+    ljmp Displaymain
       
 param_adjust:
-    	jb button_state, param_adjust 
+    jb button_state, param_adjust 
 	Wait_Milli_Seconds(#50)	
 	jb button_state, param_adjust 
 	jnb button_state, $
@@ -277,14 +322,14 @@ soak_temp:
 	Wait_Milli_Seconds(#50)	
 	jb button_updown, param_adjust
 	jnb button_updown, $
-    	jb sw_updown, dec_soak_temp
+    jb sw_updown, dec_soak_temp
 	
 inc_soak_temp:
-    mov a, stemp
+    mov a, stemp+0
     add a, #0x01
     da a
-    cjne a, #0x170, inc_soak_time_1
-    mov a, #0x130
+    cjne a, #0x71, inc_soak_temp_1
+    mov a, #0x30
     mov stime, a
     ljmp soak_temp_done
 inc_soak_temp_1:
@@ -294,8 +339,8 @@ dec_soak_temp:
     mov a, stemp
     dec a, #0x01
     da a
-    cjne a, #0x130,dec_soak_time_1
-    mov a, #0x170
+    cjne a, #0x29,dec_soak_temp_1
+    mov a, #0x70
     mov stime, a
     ljmp soak_temp_done
 dec_soak_temp_1:
@@ -323,7 +368,7 @@ inc_soak_time:
     mov a, stime
     add a, #0x01
     da a
-    cjne a, #0x90, inc_soak_time_1
+    cjne a, #0x91, inc_soak_time_1
     mov a, #0x60
     mov stime, a
     ljmp soak_time_done
@@ -334,7 +379,7 @@ dec_soak_time:
     mov a, stime
     dec a, #0x01
     da a
-    cjne a, #0x60,dec_soak_time_1
+    cjne a, #0x59,dec_soak_time_1
     mov a, #0x90
     mov stime, a
     ljmp soak_temp_done
@@ -361,8 +406,8 @@ inc_reflow_temp:
     mov a, rtemp
     add a, #0x01
     da a
-    cjne a, #0x230, inc_soak_time_1
-    mov a, #0x219
+    cjne a, #0x31, inc_reflow_temp_1
+    mov a, #0x19
     mov rtemp, a
     ljmp reflow_temp_done
 inc_reflow_temp_1:
@@ -372,8 +417,8 @@ dec_reflow_temp:
     mov a, rtemp
     dec a, #0x01
     da a
-    cjne a, #0x219, dec_reflow_temp_1
-    mov a, #0x230
+    cjne a, #0x18, dec_reflow_temp_1
+    mov a, #0x30
     mov rtemp, a
     ljmp reflow_temp_done
 dec_reflow_temp_1:
@@ -442,44 +487,28 @@ state5:		;Cooling
     
 
 Display_soak_time:
-	mov a, #0x01 ;  Clear screen command (takes some time)
-    	lcall ?WriteCommand
-    	;Wait for clear screen command to finish. Usually takes 1.52ms.
-    	Wait_Milli_Seconds(#2)
-    	Set_Cursor(1,1)
+    Set_Cursor(1,1)
 	Send_Constant_String(#setsoaktime)
 	Set_Cursor(2,1)
 	Display_BCD(stime)
 	ljmp soak_time
 
 Display_soak_temperature:
-	mov a, #0x01 ;  Clear screen command (takes some time)
-    	lcall ?WriteCommand
-    	;Wait for clear screen command to finish. Usually takes 1.52ms.
-    	Wait_Milli_Seconds(#2)
-    	Set_Cursor(1,1)
+    Set_Cursor(1,1)
 	Send_Constant_String(#setsoaktemperature)
 	Set_Cursor(2,1)
 	Display_BCD(stemp)
 	ljmp soak_temp
 
 Display_reflow_temperature:
-	mov a, #0x01 ;  Clear screen command (takes some time)
-    	lcall ?WriteCommand
-    	;Wait for clear screen command to finish. Usually takes 1.52ms.
-    	Wait_Milli_Seconds(#2)
-    	Set_Cursor(1,1)
+    Set_Cursor(1,1)
 	Send_Constant_String(#setreflowtemperature)    
 	Set_Cursor(2,1)
 	Display_BCD(rtemp)
 	ljmp reflow_temp
 
 Display_reflow_time:
-	mov a, #0x01 ;  Clear screen command (takes some time)
-    	lcall ?WriteCommand
-    	;Wait for clear screen command to finish. Usually takes 1.52ms.
-    	Wait_Milli_Seconds(#2)
-    	Set_Cursor(1,1)
+    Set_Cursor(1,1)
 	Send_Constant_String(#setreflowtime) 
 	Set_Cursor(2,1)   
 	Display_BCD(rtime)
