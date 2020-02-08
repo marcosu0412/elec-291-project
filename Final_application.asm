@@ -58,6 +58,10 @@ stemp: ds 2   ; soak temperature
 rtime: ds 2   ; reflow time
 stime: ds 2   ; soak time
 
+x:   ds 4
+y:   ds 4
+bcd: ds 5
+
 adjust_state: ds 1
 displayed_state: ds 1
 
