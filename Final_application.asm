@@ -51,6 +51,18 @@ rtime: ds 2   ; reflow time
 adjust_state: ds 1
 displayed_state: ds 1
 
+setsoaktime:
+DB 'Soak Time', 0
+
+setsoaktemperature:
+DB 'Soak Temperature',0
+
+setreflowtemperature:
+DB 'Reflow Temperature' 0
+
+setreflowtime:
+DB 'Reflow Time', 0
+
 ; Reset vector
 org 0x0000
     ljmp main
@@ -218,31 +230,30 @@ main:
 	sjmp default_state
 	; After initialization the program stays in this 'forever' loop
 	lcall Default_state ;starts off in default display screen until button pressed
-loop:
-	jb sw_star_stop, param_adjust
-	ljmp Displaymain
+
+loop: 
+        
         
 Default_state:
-    jb button_state, Default_state; if the 'button_updown' button is not pressed skip
+        jb button_state, Default_state; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb button_state, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_state, $
 	jb sw_start_stop, param_adjust ;if switch down, adjust parameters	
-    ljmp Displaymain
+        ljmp Displaymain
       
 param_adjust:
     	jb button_state, param_adjust 
 	Wait_Milli_Seconds(#50)	
 	jb button_state, param_adjust 
 	jnb button_state, $
-	mov 	a, adjust_state
-	cjne 	a, #0, check1 ;jump if bit set (switch down)
+	cjne 	adjust_state, #0, check1 ;jump if bit set (switch down)
 	ljmp 	soak_temp
 check1:
-	cjne a, #1, check2
+	cjne adjust_state, #1, check2
 	ljmp soak_time
 check2:
-	cjne a, #2, check3
+	cjne adjust_state, #2, check3
 	ljmp reflow_temp
     
 check3:
@@ -403,6 +414,36 @@ reflow_time_done:
 	ljmp loop
  
 Displaymain:
+    
+
+Display_soak_time:
+    Set_Cursor(1,1)
+	Send_Constant_String(#setsoaktime)
+	Set_Cursor(2,1)
+	Display_BCD(stime)
+	ljmp soak_time
+
+Display_soak_temperature:
+    Set_Cursor(1,1)
+	Send_Constant_String(#setsoaktemperature)
+	Set_Cursor(2,1)
+	Display_BCD(stemp)
+	ljmp soak_temp
+
+Display_reflow_temperature:
+    Set_Cursor(1,1)
+	Send_Constant_String(#setreflowtemperature)    
+	Set_Cursor(2,1)
+	Display_BCD(rtemp)
+	ljmp reflow_temp
+
+Display_reflow_time:
+    Set_Cursor(1,1)
+	Send_Constant_String(#setreflowtime) 
+	Set_Cursor(2,1)   
+	Display_BCD(rtime)
+	ljmp reflow_time
+    
       
       
 
