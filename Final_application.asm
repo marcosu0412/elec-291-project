@@ -234,7 +234,7 @@ main:
 loop: 
 	;
 	jnb sw_start_stop, param_adjust
-	ljmp Displaymain
+	ljmp Oven_Control
 	
 	
         
@@ -418,7 +418,7 @@ reflow_time_done:
 	mov adjust_state, #0
 	ljmp loop
  
-Displaymain:
+Oven_Control:
     
 
 Display_soak_time:
