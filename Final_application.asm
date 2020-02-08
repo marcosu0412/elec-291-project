@@ -20,7 +20,7 @@ $include(math32.inc)
 $LIST
 
 
-CLK           EQU 33333333 ; Microcontroller system crystal frequency in Hz
+CLK           EQU 14746000 ; Microcontroller system crystal frequency in Hz
 TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/(12*TIMER2_RATE))))
 PEAK_TEMPERATURE EQU 260
