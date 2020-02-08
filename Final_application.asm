@@ -78,8 +78,8 @@ org 0x002B
 
 
 bseg
-; For each pushbutton we have a flag.  The corresponding FSM will set this
-; flags to one when a valid press of the pushbutton is detected.
+; For each time/temperature variable have a flag
+; flags to one when a measured time/temperature reach the value
 Key1_flag: dbit 1
 Key2_flag: dbit 1
 Key3_flag: dbit 1
