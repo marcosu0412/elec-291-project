@@ -55,10 +55,10 @@ setsoaktime:
 DB 'Soak Time', 0
 
 setsoaktemperature:
-DB 'Soak Temperature',0
+DB 'Soak Temperature', 0
 
 setreflowtemperature:
-DB 'Reflow Temperature' 0
+DB 'Reflow Temperature', 0
 
 setreflowtime:
 DB 'Reflow Time', 0
