@@ -232,9 +232,14 @@ main:
 	lcall Default_state ;starts off in default display screen until button pressed
 
 loop: 
-        
+	;
+	jnb sw_start_stop, param_adjust
+	ljmp Displaymain
+	
+	
         
 Default_state:
+	;set power to 0 (turn off oven)
         jb button_state, Default_state; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb button_state, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
