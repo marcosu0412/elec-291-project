@@ -38,6 +38,9 @@ sw_updown     equ P0.3
 button_updown equ P0.4
 button_state  equ P0.5
 
+bseg
+soak_flag:   dbit 1 ;
+reflow_flag: dbit 1; 
 
 dseg at 0x30
 Count1ms: ds 2; Used to determine when half a second has passed
@@ -420,7 +423,9 @@ reflow_time_done:
  
 Oven_Control:
 
-state1: 	;Ramp to Soak
+state1:  	;Ramp to Soak
+       
+
 
 state2: 	;Soak
 
