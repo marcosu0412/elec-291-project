@@ -442,28 +442,44 @@ state5:		;Cooling
     
 
 Display_soak_time:
-    Set_Cursor(1,1)
+	mov a, #0x01 ;  Clear screen command (takes some time)
+    	lcall ?WriteCommand
+    	;Wait for clear screen command to finish. Usually takes 1.52ms.
+    	Wait_Milli_Seconds(#2)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#setsoaktime)
 	Set_Cursor(2,1)
 	Display_BCD(stime)
 	ljmp soak_time
 
 Display_soak_temperature:
-    Set_Cursor(1,1)
+	mov a, #0x01 ;  Clear screen command (takes some time)
+    	lcall ?WriteCommand
+    	;Wait for clear screen command to finish. Usually takes 1.52ms.
+    	Wait_Milli_Seconds(#2)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#setsoaktemperature)
 	Set_Cursor(2,1)
 	Display_BCD(stemp)
 	ljmp soak_temp
 
 Display_reflow_temperature:
-    Set_Cursor(1,1)
+	mov a, #0x01 ;  Clear screen command (takes some time)
+    	lcall ?WriteCommand
+    	;Wait for clear screen command to finish. Usually takes 1.52ms.
+    	Wait_Milli_Seconds(#2)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#setreflowtemperature)    
 	Set_Cursor(2,1)
 	Display_BCD(rtemp)
 	ljmp reflow_temp
 
 Display_reflow_time:
-    Set_Cursor(1,1)
+	mov a, #0x01 ;  Clear screen command (takes some time)
+    	lcall ?WriteCommand
+    	;Wait for clear screen command to finish. Usually takes 1.52ms.
+    	Wait_Milli_Seconds(#2)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#setreflowtime) 
 	Set_Cursor(2,1)   
 	Display_BCD(rtime)
