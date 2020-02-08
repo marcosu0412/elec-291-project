@@ -50,8 +50,8 @@ POWER_OUT 	equ P2.5
 
 dseg at 0x30
 Count1ms: ds 2; Used to determine when half a second has passed
-ctemp: ds 2   ; current temperature
-ctime: ds 2   ; current time
+ctemp: ds 4   ; current temperature
+ctime: ds 4   ; current time
 
 rtemp: ds 2   ; reflow  temperature
 stemp: ds 2   ; soak temperature
@@ -285,23 +285,26 @@ main:
 	mov stime+1, #0x00
 	mov rtime, #0x45   ; reflow time   
 	mov rtime+1, #0x00
-	sjmp default_state
 	; After initialization the program stays in this 'forever' loop
 	lcall Default_state ;starts off in default display screen until button pressed
 
 loop: 
+	lcall accumulate_loop_start
+	l
+
+accumulate_loop_start:
         ; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
 	Load_x(0)
-    mov x+0, AD0DAT0
+    	mov x+0, AD0DAT0
 	mov R7, #255
-    lcall Wait10us
+    	lcall Wait10us
 accumulate_loop:
-    mov y+0, AD0DAT0
-    mov y+1, #0
-    mov y+2, #0
-    mov y+3, #0
-    lcall add32
-    lcall Wait10us
+    	mov y+0, AD0DAT0
+    	mov y+1, #0
+    	mov y+2, #0
+    	mov y+3, #0
+    	lcall add32
+    	lcall Wait10us
 	djnz R7, accumulate_loop
 	
 	; Now divide by 16 (2^4)
@@ -318,11 +321,14 @@ accumulate_loop:
 	lcall sub32
 	
 	lcall hex2bcd
-	
+	mov ctemp+0, x+0 	;store calculated temperature into x
+	mov ctemp+1, x+1
+	mov ctemp+2, x+2
+	mov ctemp+3, x+3
 	lcall SendTemp ; Send to PUTTy, with 2 decimal digits to show that it actually works
 	lcall Wait1S
 
-	sjmp forever_loop
+	ret
 	
 	
 	
@@ -334,7 +340,7 @@ Default_state:
 	jb button_state, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_state, $
 	jb sw_start_stop, param_adjust ;if switch down, adjust parameters	
-    	ljmp Displaymain
+    	ljmp loop
       
 param_adjust:
     	jb button_state, param_adjust 
