@@ -72,13 +72,31 @@ setsoaktime:
 DB 'Soak Time', 0
 
 setsoaktemperature:
-DB 'Soak Temperature', 0
+DB 'Soak Temp', 0
 
 setreflowtemperature:
-DB 'Reflow Temperature', 0
+DB 'Reflow Temp', 0
 
 setreflowtime:
 DB 'Reflow Time', 0
+
+displaystate1:
+DB 'Preheat', 0
+
+displaystate2:
+DB 'Soaking', 0
+
+displaystate3:
+DB 'Ramping', 0
+
+displaystate4:
+DB 'Reflow', 0
+
+displaystate5:
+DB 'Cooling', 0
+
+displayabort:
+DB 'Aborting...', 0
 
 ; Reset vector
 org 0x0000
@@ -324,7 +342,6 @@ accumulate_loop:
 	mov ctemp+0, x+0 	;store calculated temperature into x
 	mov ctemp+1, x+1
 	mov ctemp+2, x+2
-	mov ctemp+3, x+3
 	lcall SendTemp ; Send to PUTTy, with 2 decimal digits to show that it actually works
 	lcall Wait1S
 
@@ -531,6 +548,33 @@ state4:		;Peak
 
 state5:		;Cooling
     
+Display_oven_time:
+	Set_Cursor(2,1)
+	Display_BCD(ctime+2)
+	Set_Cursor(2,2)
+	Display_BCD(ctime+1)
+	Set_Cursor(2,3)
+	Display_BCD(ctime+0)
+	Set_Cursor(2,4)
+	Display_BCD(#'s')
+	ret
+	
+Display_oven_temp:
+	Set_Cursor(1,10)
+	Display_BCD(ctemp+2)
+	Set_Cursor(1,11)
+	Display_BCD(ctemp+1)
+	Set_Cursor(1,12)
+	Display_BCD(ctemp+0)
+	Set_Cursor(1,13)
+	Display_BCD(#223) ;degrees character
+	Set_Cursor(1,14)
+	Display_BCD(#'C')
+	ret
+
+Display_oven_state:
+	Set_Cursor(1,1)
+	Send_Constant_String(#displaystate1)
 
 Display_soak_time:
     Set_Cursor(1,1)
