@@ -287,10 +287,36 @@ main:
 	lcall Default_state ;starts off in default display screen until button pressed
 
 loop: 
-	;
-	jnb sw_start_stop, param_adjust
-	ljmp Oven_Control
+	Load_x(0)
+        mov x+0, AD0DAT0
+	mov R7, #255
+        lcall Wait10us
+accumulate_loop:
+        mov y+0, AD0DAT0
+    	mov y+1, #0
+    	mov y+2, #0
+    	mov y+3, #0
+    	lcall add32
+    	lcall Wait10us
+	djnz R7, accumulate_loop
 	
+	; Now divide by 16 (2^4)
+	Load_Y(16)
+	lcall div32
+; Convert to temperature (C)
+	Load_Y(33000) ; Vref is 3.3V
+	lcall mul32
+	Load_Y(((1<<12)-1)) ; 2^12-1
+	lcall div32
+	Load_Y(27300)
+	lcall sub32
+	
+	lcall hex2bcd
+	
+	lcall SendTemp ; Send to PUTTy, with 2 decimal digits to show that it actually works
+	lcall Wait1S
+
+	sjmp forever_loop	
 	
         
 Default_state:
