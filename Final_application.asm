@@ -89,6 +89,7 @@ soak_time_flag:         dbit 1
 soak_temp_flag:         dbit 1
 reflow_time_flag:       dbit 1
 reflow_temp_flag:       dbit 1
+abort_flag 		dbit 1
 
 cseg
 ;---------------------------------;
@@ -264,6 +265,7 @@ main:
 	setb EA   ; Enable Global interrupts
     
     	; Initialize variables
+	clr abort_flag
 	mov adjust_state, #0
 	mov displayed_state, #0
 	mov ctemp, #0
