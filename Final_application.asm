@@ -66,7 +66,8 @@ stemp:			 ds 2   ; soak temperature
 rtime:			 ds 2   ; reflow time
 stime:		   	 ds 2   ; soak time
 power_pulse:     ds 1 ; power pulse
-pwm  : ds 1 ; pwm for power
+pwm:             ds 1 ; pwm for power
+tt:              ds 1 ; temporary variable to hold stime 
 
 adjust_state: ds 1
 oven_state: ds 1
@@ -301,6 +302,7 @@ main:
 	mov stime+1, #0x00
 	mov rtime, #0x45   ; reflow time   
 	mov rtime+1, #0x00
+	mov tt, #0x00
 	; After initialization the program stays in this 'forever' loop
 	lcall Default_state ;starts off in default display screen until button pressed
 
@@ -357,8 +359,7 @@ accumulate_loop:
 	mov ctemp+2, x+2
 	lcall SendTemp ; Send to PUTTy, with 2 decimal digits to show that it actually works
 	lcall Wait1S
-
-	ret
+    ret
 	
 	
 	
@@ -571,21 +572,26 @@ state1_2:
     ljmp loop
 done_ramp_to_soak:
     inc oven_state
+	mov tt, stime
 	ljmp loop
         
+
 state2: 	;Soak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate2)
 	mov pwm, #102 ; 40% power 
-	mov a, stime
-    ljmp loop
-
+	dec tt
+	cjne tt, #0, loop
+    ljmp state2_done
+state2_done:
+    inc oven_state
+	clr tt 
+	ljmp loop
 
 state3:		;Ramp to Peak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate3)
-	
-	mov pwm #255 ; 100% power
+	mov pwm, #255 ; 100% power
 	mov a, rtemp ; a equals setting temp
 	clr c
 	subb a, ctemp  ; compare setting temp and ctemp
@@ -599,20 +605,26 @@ state3_2:
     ljmp loop
 done_ramp_to_reflow:
     inc state
+	mov tt, rtime 
 	ljmp loop
 
-state4:		;Peak
+state4:		;reflow
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate4)
-        
-	
-	
+    mov pwm, #((255*20)/100) ; 20% of power
+    dec tt
+	cjne tt, #0, loop
+	ljmp state4_done
+state4_done:
+    inc oven_state
+	clr tt 
 	ljmp loop
 
-state5:		;Cooling
+state5:		;Cooling   not sure about this state 
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate5)
-	
+	mov pwm, #0 ; 
+	mov a, ctemp
 	ljmp loop
  
 
