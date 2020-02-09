@@ -46,7 +46,7 @@ sw_start_stop equ P0.0
 sw_updown     equ P0.3
 button_updown equ P0.4
 button_state  equ P0.5
-
+button_reset  equ P2.6
 ;---------------------------------;
 ; Temperature and Power		  ;
 ;---------------------------------;
@@ -61,11 +61,11 @@ Count1ms: ds 2; Used to determine when half a second has passed
 ctemp: ds 4   ; current temperature
 ctime: ds 4   ; current time
 
-rtemp: ds 2   ; reflow  temperature
-stemp: ds 2   ; soak temperature
-rtime: ds 2   ; reflow time
-stime: ds 2   ; soak time
-power_pulse : ds 1 ; power pulse
+rtemp:			 ds 2   ; reflow  temperature
+stemp:			 ds 2   ; soak temperature
+rtime:			 ds 2   ; reflow time
+stime:		   	 ds 2   ; soak time
+power_pulse:     ds 1 ; power pulse
 pwm  : ds 1 ; pwm for power
 
 adjust_state: ds 1
@@ -126,7 +126,7 @@ soak_time_flag:         dbit 1
 soak_temp_flag:         dbit 1
 reflow_time_flag:       dbit 1
 reflow_temp_flag:       dbit 1
-abort_flag 		dbit 1
+abort_flag: 		    dbit 1
 
 cseg
 ;---------------------------------;
@@ -142,7 +142,7 @@ Timer2_Init:
 	mov RCAP2L, #low(TIMER2_RELOAD)
 	; Enable the timer and interrupts
     setb ET2  ; Enable timer 2 interrupt
-     clr TR2  ; Enable timer 2 
+    clr TR2  ; Enable timer 2 
 	ret
 
 Timer2_start:
@@ -256,60 +256,6 @@ InitADC_L1:
 	jnb	acc.3,InitADC
 	ret
 
-; Look-up table for the 7-seg displays. (Segments are turn on with zero) 
-T_7seg:
-    DB 40H, 79H, 24H, 30H, 19H, 12H, 02H, 78H, 00H, 10H
-
-; Displays a BCD number pased in R0 in HEX1-HEX0
-Display_BCD_7_Seg_HEX10:
-	mov dptr, #T_7seg
-
-	mov a, R0
-	swap a
-	anl a, #0FH
-	movc a, @a+dptr
-	mov HEX1, a
-	
-	mov a, R0
-	anl a, #0FH
-	movc a, @a+dptr
-	mov HEX0, a
-	
-	ret
-
-; Displays a BCD number pased in R0 in HEX3-HEX2
-Display_BCD_7_Seg_HEX32:
-	mov dptr, #T_7seg
-
-	mov a, R0
-	swap a
-	anl a, #0FH
-	movc a, @a+dptr
-	mov HEX3, a
-	
-	mov a, R0
-	anl a, #0FH
-	movc a, @a+dptr
-	mov HEX2, a
-	
-	ret
-
-; Displays a BCD number pased in R0 in HEX5-HEX4
-Display_BCD_7_Seg_HEX54:
-	mov dptr, #T_7seg
-
-	mov a, R0
-	swap a
-	anl a, #0FH
-	movc a, @a+dptr
-	mov HEX5, a
-	
-	mov a, R0
-	anl a, #0FH
-	movc a, @a+dptr
-	mov HEX4, a
-	
-	ret
 
 ; The 8-bit hex number passed in the accumulator is converted to
 ; BCD and stored in [R1, R0]
@@ -359,8 +305,8 @@ main:
 	lcall Default_state ;starts off in default display screen until button pressed
 
 loop: 
-                jb abort_flag, abort
-	        lcall accumulate_loop_start
+        jb abort_flag, abort
+	    lcall accumulate_loop_start
 		cjne oven_state, #0, checkmain1
 		ljmp state1
 checkmain1:	cjne oven_state, #1, checkmain2
@@ -381,7 +327,7 @@ accumulate_loop_start:
         ; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
 	Load_x(0)
     	mov x+0, AD0DAT0
-	mov R7, #255
+	    mov R7, #255
     	lcall Wait10us
 accumulate_loop:
     	mov y+0, AD0DAT0
@@ -419,15 +365,15 @@ accumulate_loop:
         
 Default_state:
 	;set power to 0 (turn off oven)
-    	jb button_state, Default_state; if the 'button_updown' button is not pressed skip
+    jb button_state, Default_state; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb button_state, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_state, $
 	jb sw_start_stop, param_adjust ;if switch down, adjust parameters	
-    	ljmp loop
+    ljmp loop
 
 param_adjust:
-        jnb     sw_start_stop, default_state
+    jnb     sw_start_stop, default_state
 	cjne 	adjust_state, #0, check1 ;jump if bit set (switch down)
 	ljmp 	soak_temp
 check1:
@@ -444,30 +390,33 @@ check3:
 ;in each of these, change display and read button_updown to adjust
 ;also read button_state to inc adjust_state
 soak_temp:
-    	jb button_updown, param_adjust //check if button_down is pressed. 
+    lcall Display_soak_temperature
+    jb button_updown, param_adjust //check if button_down is pressed. 
 	Wait_Milli_Seconds(#50)	
 	jb button_updown, param_adjust
 	jnb button_updown, $
-    	jb sw_updown, dec_soak_temp
+   
+
+    jb sw_updown, dec_soak_temp
 	
 inc_soak_temp:
    	mov a, stemp+0
    	add a, #0x01
-    	da a
-    	cjne a, #0x71, inc_soak_temp_1
-    	mov a, #0x30
-    	mov stime, a
-    	ljmp soak_temp_done
+    da a
+    cjne a, #0x71, inc_soak_temp_1
+    mov a, #0x30
+    mov stime, a
+    ljmp soak_temp_done
 inc_soak_temp_1:
-    	ljmp soak_temp_done
+    ljmp soak_temp_done
     
 dec_soak_temp:
-    	mov a, stemp
-    	dec a, #0x01
-    	da a
-    	cjne a, #0x29,dec_soak_temp_1
-    	mov a, #0x70
-    	mov stime, a
+    mov a, stemp
+    dec a, #0x01
+    da a
+    cjne a, #0x29,dec_soak_temp_1
+    mov a, #0x70
+    mov stime, a
    	ljmp soak_temp_done
 dec_soak_temp_1:
     	ljmp soak_temp_done
@@ -484,6 +433,7 @@ soak_temp_done:
 
 
 soak_time:
+    lcall Display_soak_time
     jb button_updown, param_adjust //check if button_down is pressed. 
     Wait_Milli_Seconds(#50)	
     jb button_updown, param_adjust
@@ -522,6 +472,7 @@ soak_time_done:
     ljmp param_state
 
 reflow_temp:
+    lcall Display_reflow_temperature
     jb button_updown, param_adjust //check if button_down is pressed. 
     Wait_Milli_Seconds(#50)	
     jb button_updown, param_adjust
@@ -559,6 +510,7 @@ reflow_temp_done:
     ljmp param_adjust
 
 reflow_time:
+    lcall display_reflow
     jb button_updown, param_adjust
     Wait_Milli_Seconds(#50)
     jb button_updown, param_adjust
@@ -605,15 +557,15 @@ state1: 	;Ramp to Soak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate1)
 
-       	mov pwm #255 ; 100% power
+    mov pwm #255 ; 100% power
 	mov a, stemp ; a equals setting temp
 	
 state1_2:
-    	mov a, stemp+1
+    mov a, stemp+1
 	clr c
 	subb a, ctemp+1
 	jz done_ramp_to_soak
-    	ljmp loop
+    ljmp loop
 done_ramp_to_soak:
         
 state2: 	;Soak
@@ -636,11 +588,11 @@ state3:		;Ramp to Peak
 	jc state3_2     
 	ljmp loop 
 state3_2:
-    	mov a, rtemp+1
+    mov a, rtemp+1
 	clr c
 	subb a, ctemp+1
 	jz done_ramp_to_reflow
-    	ljmp loop
+    ljmp loop
 done_ramp_to_reflow:
         
 
@@ -688,28 +640,28 @@ Display_soak_time:
 	Send_Constant_String(#setsoaktime)
 	Set_Cursor(2,1)
 	Display_BCD(stime)
-	ljmp soak_time
+	ret 
 
 Display_soak_temperature:
     Set_Cursor(1,1)
 	Send_Constant_String(#setsoaktemperature)
 	Set_Cursor(2,1)
 	Display_BCD(stemp)
-	ljmp soak_temp
+	ret
 
 Display_reflow_temperature:
     Set_Cursor(1,1)
 	Send_Constant_String(#setreflowtemperature)    
 	Set_Cursor(2,1)
 	Display_BCD(rtemp)
-	ljmp reflow_temp
+	ret
 
 Display_reflow_time:
     Set_Cursor(1,1)
 	Send_Constant_String(#setreflowtime) 
 	Set_Cursor(2,1)   
 	Display_BCD(rtime)
-	ljmp reflow_time
+    ret
     
       
       
