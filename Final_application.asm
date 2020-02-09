@@ -154,7 +154,7 @@ Timer2_start:
 ;---------------------------------;
 Timer2_ISR:
 	clr TF2  ; Timer 2 doesn't clear TF2 automatically. Do it in ISR
-		; The two registers used in the ISR must be saved in the stack
+		     ; The two registers used in the ISR must be saved in the stack
 	push acc
 	push psw
 	
@@ -558,23 +558,27 @@ state1: 	;Ramp to Soak
 	Send_Constant_String(#displaystate1)
 
     mov pwm #255 ; 100% power
-	mov a, stemp ; a equals setting temp
-	
+	mov a, stemp ; a equals setting temp lower bit
+    clr c 
+	subb a, ctemp
+	jc state1_2
+    ljmp loop 
 state1_2:
     mov a, stemp+1
-	clr c
+    clr c 
 	subb a, ctemp+1
 	jz done_ramp_to_soak
     ljmp loop
 done_ramp_to_soak:
+    inc oven_state
+	ljmp loop
         
 state2: 	;Soak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate2)
 	mov pwm, #102 ; 40% power 
 	mov a, stime
-        
-	ljmp loop
+    ljmp loop
 
 
 state3:		;Ramp to Peak
@@ -594,7 +598,8 @@ state3_2:
 	jz done_ramp_to_reflow
     ljmp loop
 done_ramp_to_reflow:
-        
+    inc state
+	ljmp loop
 
 state4:		;Peak
 	Set_Cursor(1,1)
