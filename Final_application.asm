@@ -65,6 +65,8 @@ rtemp: ds 2   ; reflow  temperature
 stemp: ds 2   ; soak temperature
 rtime: ds 2   ; reflow time
 stime: ds 2   ; soak time
+power_pulse : ds 1 ; power pulse
+pwm  : ds 1 ; pwm for power
 
 adjust_state: ds 1
 oven_state: ds 1
@@ -156,11 +158,21 @@ Timer2_ISR:
 	push acc
 	push psw
 	
+	
+	
+	inc power_pulse
+	clr c
+	mov a, power_pulse
+	subb a, pwm
+	mov POWER_OUT, c
+	
 	; Increment the 16-bit one mili second counter
 	inc Count1ms+0    ; Increment the low 8-bits first
 	mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
 	jnz Inc_Done
 	inc Count1ms+1
+	
+	
 
 Inc_Done:
 	; Check if full second has passed
@@ -193,8 +205,8 @@ Timer0_Init:
 	mov TH0, #high(TIMER0_RELOAD)
 	mov TL0, #low(TIMER0_RELOAD)
 	; Enable the timer and interrupts
-    setb ET0  ; Enable timer 0 interrupt
-    setb TR0  ; Start timer 0
+        setb ET0  ; Enable timer 0 interrupt
+        setb TR0  ; Start timer 0
 	ret
 
 ;---------------------------------;
@@ -205,7 +217,9 @@ Timer0_Init:
 Timer0_ISR:
 	mov TH0, #high(TIMER0_RELOAD)
 	mov TL0, #low(TIMER0_RELOAD)
-	cpl SOUND_OUT ; Connect speaker to this pin
+	
+        
+	
 	reti
 
 
@@ -579,7 +593,7 @@ state1: 	;Ramp to Soak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate1)
 
-      	mov pwm #255 ; 100% power
+       	mov pwm #255 ; 100% power
 	mov a, stemp ; a equals setting temp
 	clr c
 	subb a, ctemp  ; compare setting temp and ctemp
@@ -596,8 +610,13 @@ done_ramp_to_soak:
 state2: 	;Soak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate2)
+	mov pwm, #102 ; 40% power 
+	mov a, stime
+        
+	
 	
 	ljmp loop
+
 
 state3:		;Ramp to Peak
 	Set_Cursor(1,1)
@@ -629,7 +648,8 @@ state5:		;Cooling
 	Send_Constant_String(#displaystate5)
 	
 	ljmp loop
-    
+ 
+
 Display_oven_time:
 	Set_Cursor(2,1)
 	Display_BCD(ctime+2)
