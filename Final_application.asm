@@ -142,7 +142,7 @@ Timer2_Init:
 	mov RCAP2L, #low(TIMER2_RELOAD)
 	; Enable the timer and interrupts
     setb ET2  ; Enable timer 2 interrupt
-    clr TR2  ; Enable timer 2 
+    clr TR2  ; stop timer 2 
 	ret
 
 Timer2_start:
