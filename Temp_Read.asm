@@ -144,15 +144,15 @@ MainProgram:
 	lcall Wait1S ; Wait a bit so PUTTy has a chance to start
 	mov dptr, #InitialMessage
 	lcall SendString
-	
+
 forever_loop:
 	; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
 	Load_x(0)
-    mov x+0, AD0DAT0
+    mov x+0, AD0DAT3
 	mov R7, #255
     lcall Wait10us
 accumulate_loop:
-    mov y+0, AD0DAT0
+    mov y+0, AD0DAT3
     mov y+1, #0
     mov y+2, #0
     mov y+3, #0
@@ -173,37 +173,59 @@ accumulate_loop:
 	Load_Y(27300)
 	lcall sub32
 	
-	lcall hex2bcd
+	mov a, x
+;	lcall hex2bcd
 	
-	lcall SendTemp ; Send to PUTTy, with 2 decimal digits to show that it actually works
-	lcall Wait1S
-	lcall forever_loop2
+;	lcall SendTemp ; Send to PUTTy, with 2 decimal digits to show that it actually works
+
 	
-forever_loop2:
-	load_x(0)
-	mov x+0, AD0DAT1
+forever_loop_2:	
+	
+	Load_x(0)
+    mov x+0, AD0DAT0
 	mov R7, #255
-	lcall Wait10us
-	lcall accumulate_loop2
-	
-accumulate_loop2:
-	mov y+0, AD0DAT0
+    lcall Wait10us
+    
+accumulate_loop_2:
+    mov y+0, AD0DAT0
     mov y+1, #0
     mov y+2, #0
     mov y+3, #0
     lcall add32
     lcall Wait10us
-	djnz R7, accumulate_loop2
+	djnz R7, accumulate_loop_2
 	
-	load_Y(24390)
-	lcall mul32
-	load_Y(330)
+	; Now divide by 16 (2^4)
+	Load_Y(16)
 	lcall div32
+	; x has now the 12-bit representation of the temperature
+	
+	; Convert to temperature (C)
+;	Load_Y(33000) ; Vref is 3.3V
+;	lcall mul32
+;	Load_Y(((1<<12)-1)) ; 2^12-1
+;	lcall div32
+;	Load_Y(27300)
+;	lcall sub32
+
+
+	Load_Y(100000)
+	lcall mul32
+	Load_Y(323) ; Vref is 3.3V
+	lcall div32
+	Load_Y(41)
+	lcall div32
+	Load_Y(330)
+	lcall mul32
+	Load_Y(2550)
+	lcall div32
+
+	mov y, a
+	lcall add32
 	lcall hex2bcd
-	lcall sendtemp
-	lcall wait1s
+	
+	lcall SendTemp ; Send to PUTTy, with 2 decimal digits to show that it actually works
+	lcall Wait1S
+
 	ljmp forever_loop
-
-
-
 end
