@@ -537,9 +537,25 @@ Oven_Control:
 ;measure temperature, set flag when predefined soak/ramp temperature reached, transition state 
 
 
-state1: 	;Ramp to Soak
-	mov 
+state1:         ;Ramp to Soak
+      mov pwm #255 ; 100% power
+      mov a, stemp ; a equals setting temp
+      clr c
+      subb a, ctemp  ; compare setting temp and ctemp
+      jc state1_2     
+      ljmp loop 
 
+state1_2:
+      mov a, stemp+1
+      clr c
+      subb a, ctemp+1
+      jz done_ramp_to_soak
+      ljmp loop
+done_ramp_to_soak:
+      
+      
+      
+      
 state2: 	;Soak
 
 state3:		;Ramp to Peak
