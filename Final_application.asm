@@ -479,7 +479,7 @@ soak_temp_done:
 	jnb button_state, $
     
 	inc adjust_state
-	ljmp loop
+	ljmp param_adjust
      
 
 
@@ -519,7 +519,7 @@ soak_time_done:
     jnb button_state, $
     
     inc adjust_state
-    ljmp loop
+    ljmp param_state
 
 reflow_temp:
     jb button_updown, param_adjust //check if button_down is pressed. 
@@ -556,7 +556,7 @@ reflow_temp_done:
     jb button_state, reflow_temp
     jnb button_state, $
     inc adjust_state
-    ljmp loop 
+    ljmp param_adjust
 
 reflow_time:
     jb button_updown, param_adjust
@@ -593,7 +593,7 @@ reflow_time_done:
 	jb button_state, reflow_temp
 	jnb button_state, $
 	mov adjust_state, #0
-	ljmp loop
+	ljmp param_adjust
  
 Oven_Control:
 ;in each state, set power (0,40,100)
