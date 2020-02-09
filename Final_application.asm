@@ -28,6 +28,9 @@ XTAL EQU 7373000
 BAUD EQU 115200
 BRVAL EQU ((XTAL/BAUD)-16)
 
+;---------------------------------;
+; LCD Pins			  ;
+;---------------------------------;
 LCD_RS equ P0.7
 LCD_RW equ P3.0
 LCD_E  equ P3.1
@@ -36,18 +39,23 @@ LCD_D5 equ P2.1
 LCD_D6 equ P2.2
 LCD_D7 equ P2.3
 
+;---------------------------------;
+; Button/Switch Pins		  ;
+;---------------------------------;
 sw_start_stop equ P0.0
 sw_updown     equ P0.3
 button_updown equ P0.4
 button_state  equ P0.5
 
-
-
-;change ports later when configuration is figured out
+;---------------------------------;
+; Temperature and Power		  ;
+;---------------------------------;
 TEMP_IN 	equ P2.4
-POWER_OUT 	equ P2.5
+POWER_OUT 	equ P2.7
 
-
+;---------------------------------;
+; Variable Names		  ;
+;---------------------------------;
 dseg at 0x30
 Count1ms: ds 2; Used to determine when half a second has passed
 ctemp: ds 4   ; current temperature
@@ -106,7 +114,9 @@ org 0x0000
 org 0x002B
 	ljmp Timer2_ISR
 
-
+;---------------------------------;
+; Flags				  ;
+;---------------------------------;
 bseg
 ; For each pushbutton we have a flag.  The corresponding FSM will set this
 ; flags to one when a valid press of the pushbutton is detected.
@@ -170,7 +180,11 @@ Timer2_ISR_done:
 	pop psw
 	pop acc
 	reti
-; initialization for timer 0
+	
+;---------------------------------;
+; Routine to initialize the ISR   ;
+; for timer 0                     ;
+;---------------------------------;
 Timer0_Init:
 	mov a, TMOD
 	anl a, #0xf0 ; Clear the bits for timer 0
