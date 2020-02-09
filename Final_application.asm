@@ -532,33 +532,65 @@ reflow_time_done:
 	ljmp loop
  
 Oven_Control:
-;in each state, set power (0,20,100)
+;in each state, set power (0,40,100)
 ;set timer for soak and peak states (count down every second, set flag at 0, transition state if flag set)
 ;measure temperature, set flag when predefined soak/ramp temperature reached, transition state 
 
 
 state1: 	;Ramp to Soak
-      mov pwm #255 ; 100% power
+	Set_Cursor(1,1)
+	Send_Constant_String(#displaystate1)
+
+      	mov pwm #255 ; 100% power
 	mov a, stemp ; a equals setting temp
 	clr c
 	subb a, ctemp  ; compare setting temp and ctemp
 	jc state1_2     
 	ljmp loop 
 state1_2:
-    mov a, stemp+1
+    	mov a, stemp+1
 	clr c
 	subb a, ctemp+1
 	jz done_ramp_to_soak
-    ljmp loop
+    	ljmp loop
 done_ramp_to_soak:
 
 state2: 	;Soak
+	Set_Cursor(1,1)
+	Send_Constant_String(#displaystate2)
+	
+	ljmp loop
 
 state3:		;Ramp to Peak
+	Set_Cursor(1,1)
+	Send_Constant_String(#displaystate3)
+	
+	mov pwm #255 ; 100% power
+	mov a, rtemp ; a equals setting temp
+	clr c
+	subb a, ctemp  ; compare setting temp and ctemp
+	jc state3_2     
+	ljmp loop 
+state3_2:
+    	mov a, rtemp+1
+	clr c
+	subb a, ctemp+1
+	jz done_ramp_to_reflow
+    	ljmp loop
+done_ramp_to_reflow:
+
 
 state4:		;Peak
+	Set_Cursor(1,1)
+	Send_Constant_String(#displaystate4)
+	
+	ljmp loop
 
 state5:		;Cooling
+	Set_Cursor(1,1)
+	Send_Constant_String(#displaystate5)
+	
+	ljmp loop
     
 Display_oven_time:
 	Set_Cursor(2,1)
@@ -583,10 +615,6 @@ Display_oven_temp:
 	Set_Cursor(1,14)
 	Display_BCD(#'C')
 	ret
-
-Display_oven_state:
-	Set_Cursor(1,1)
-	Send_Constant_String(#displaystate1)
 
 Display_soak_time:
     Set_Cursor(1,1)
