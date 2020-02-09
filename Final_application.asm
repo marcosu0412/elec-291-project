@@ -59,7 +59,7 @@ rtime: ds 2   ; reflow time
 stime: ds 2   ; soak time
 
 adjust_state: ds 1
-displayed_state: ds 1
+oven_state: ds 1
 
 x: ds 4 ;for use in math32
 y: ds 4
@@ -81,19 +81,19 @@ setreflowtime:
 DB 'Reflow Time', 0
 
 displaystate1:
-DB 'Preheat', 0
+DB 'Preheat ', 0
 
 displaystate2:
-DB 'Soaking', 0
+DB 'Soaking ', 0
 
 displaystate3:
-DB 'Ramping', 0
+DB 'Ramping ', 0
 
 displaystate4:
-DB 'Reflow', 0
+DB 'Reflow  ', 0
 
 displaystate5:
-DB 'Cooling', 0
+DB 'Cooling ', 0
 
 displayabort:
 DB 'Aborting...', 0
@@ -537,25 +537,9 @@ Oven_Control:
 ;measure temperature, set flag when predefined soak/ramp temperature reached, transition state 
 
 
-state1:         ;Ramp to Soak
-      mov pwm #255 ; 100% power
-      mov a, stemp ; a equals setting temp
-      clr c
-      subb a, ctemp  ; compare setting temp and ctemp
-      jc state1_2     
-      ljmp loop 
+state1: 	;Ramp to Soak
+	mov 
 
-state1_2:
-      mov a, stemp+1
-      clr c
-      subb a, ctemp+1
-      jz done_ramp_to_soak
-      ljmp loop
-done_ramp_to_soak:
-      
-      
-      
-      
 state2: 	;Soak
 
 state3:		;Ramp to Peak
