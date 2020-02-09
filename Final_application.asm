@@ -410,12 +410,9 @@ Default_state:
 	jnb button_state, $
 	jb sw_start_stop, param_adjust ;if switch down, adjust parameters	
     	ljmp loop
-      
-param_adjust:
-    	jb button_state, param_adjust 
-	Wait_Milli_Seconds(#50)	
-	jb button_state, param_adjust 
-	jnb button_state, $
+
+para_adjust:
+        jb sw_start-stop, default_state
 	cjne 	adjust_state, #0, check1 ;jump if bit set (switch down)
 	ljmp 	soak_temp
 check1:
@@ -606,15 +603,13 @@ state1_2:
 	jz done_ramp_to_soak
     	ljmp loop
 done_ramp_to_soak:
-
+        
 state2: 	;Soak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate2)
 	mov pwm, #102 ; 40% power 
 	mov a, stime
         
-	
-	
 	ljmp loop
 
 
@@ -635,11 +630,13 @@ state3_2:
 	jz done_ramp_to_reflow
     	ljmp loop
 done_ramp_to_reflow:
-
+        
 
 state4:		;Peak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate4)
+        
+	
 	
 	ljmp loop
 
