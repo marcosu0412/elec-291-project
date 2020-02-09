@@ -359,8 +359,23 @@ main:
 	lcall Default_state ;starts off in default display screen until button pressed
 
 loop: 
-	lcall accumulate_loop_start
-	l
+                jb abort_flag, abort
+	        lcall accumulate_loop_start
+		cjne oven_state, #0, checkmain1
+		ljmp state1
+checkmain1:	cjne oven_state, #1, checkmain2
+		ljmp state1
+		
+checkmain2:	cjne oven_state, #2, checkmain3
+		ljmp state1
+		
+checkmain3:	cjne oven_state, #3, checkmain4
+		ljmp state1
+		
+checkmain4:	cjne oven_state, #4, abort
+		ljmp state1
+
+abort:
 
 accumulate_loop_start:
         ; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
@@ -411,8 +426,8 @@ Default_state:
 	jb sw_start_stop, param_adjust ;if switch down, adjust parameters	
     	ljmp loop
 
-para_adjust:
-        jb sw_start-stop, default_state
+param_adjust:
+        jnb     sw_start_stop, default_state
 	cjne 	adjust_state, #0, check1 ;jump if bit set (switch down)
 	ljmp 	soak_temp
 check1:
@@ -592,10 +607,7 @@ state1: 	;Ramp to Soak
 
        	mov pwm #255 ; 100% power
 	mov a, stemp ; a equals setting temp
-	clr c
-	subb a, ctemp  ; compare setting temp and ctemp
-	jc state1_2     
-	ljmp loop 
+	
 state1_2:
     	mov a, stemp+1
 	clr c
