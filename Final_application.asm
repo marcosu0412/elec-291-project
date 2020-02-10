@@ -29,8 +29,8 @@ org 0x002B
 	ljmp Timer2_ISR
 
 CLK           EQU 14746000 ; Microcontroller system crystal frequency in Hz
-TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
-TIMER2_RELOAD EQU ((65536-(CLK/(12*TIMER2_RATE))))
+CCU_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
+CCU_RELOAD EQU ((65536-(CLK/(12*TIMER2_RATE)))) 	;CCU used in place of timer2
 PEAK_TEMPERATURE EQU 260
 XTAL EQU 7373000
 BAUD EQU 115200
@@ -133,12 +133,12 @@ abort_flag: 		    dbit 1
 cseg
 ;---------------------------------;
 ; Routine to initialize the ISR   ;
-; for timer 2                     ;
+; for CCU                     ;
 ;---------------------------------;
 Timer2_Init:
 	mov T2CON, #0 ; Stop timer/counter.  Autoreload mode.
-	mov TH2, #high(TIMER2_RELOAD)
-	mov TL2, #low(TIMER2_RELOAD)
+	mov TH2, #high(CCU_RELOAD)
+	mov TL2, #low(CCU_RELOAD)
 	; Set the reload value
 	mov RCAP2H, #high(TIMER2_RELOAD)
 	mov RCAP2L, #low(TIMER2_RELOAD)
@@ -152,7 +152,7 @@ Timer2_start:
 	ret
 
 ;---------------------------------;
-; ISR for timer 2.  Runs evere ms ;
+; ISR for timer 2.  Runs every ms ;
 ;---------------------------------;
 Timer2_ISR:
 	clr TF2  ; Timer 2 doesn't clear TF2 automatically. Do it in ISR
