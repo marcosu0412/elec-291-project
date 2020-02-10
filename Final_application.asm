@@ -27,6 +27,9 @@ org 0x0000
 ; Timer/Counter 2 overflow interrupt vector
 org 0x002B
 	ljmp Timer2_ISR
+	
+org 0x005b ; CCU interrupt vector.  Used in this code to replay the wave file.
+	ljmp CCU_ISR
 
 CLK           EQU 14746000 ; Microcontroller system crystal frequency in Hz
 TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
@@ -150,6 +153,67 @@ Timer2_Init:
 Timer2_start:
 	setb TR2 ; start timer 2
 	ret
+	
+;---------------------------------;
+; Routine to initialize the CCU.  ;
+; We are using the CCU timer in a ;
+; manner similar to the timer 2   ;
+; available in other 8051s        ;
+;---------------------------------;
+CCU_Init:
+	mov TH2, #high(CCU_RELOAD)
+	mov TL2, #low(CCU_RELOAD)
+	mov TOR2H, #high(CCU_RELOAD)
+	mov TOR2L, #low(CCU_RELOAD)
+	mov TCR21, #10000000b ; Latch the reload value
+	mov TICR2, #10000000b ; Enable CCU Timer Overflow Interrupt
+	setb ECCU ; Enable CCU interrupt
+	setb TMOD20 ; Start CCU timer
+	ret
+
+;---------------------------------;
+; ISR for CCU.  Used to playback  ;
+; the WAV file stored in the SPI  ;
+; flash memory.                   ;
+;---------------------------------;
+CCU_ISR:
+	mov TIFR2, #0 ; Clear CCU Timer Overflow Interrupt Flag bit. Actually, it clears all the bits!
+	setb P2.6 ; To check the interrupt rate with oscilloscope.
+	
+	; The registers used in the ISR must be saved in the stack
+	push acc
+	push psw
+	
+	; Check if the play counter is zero.  If so, stop playing sound.
+	mov a, w+0
+	orl a, w+1
+	orl a, w+2
+	jz stop_playing
+	
+	; Decrement play counter 'w'.  In this implementation 'w' is a 24-bit counter.
+	mov a, #0xff
+	dec w+0
+	cjne a, w+0, keep_playing
+	dec w+1
+	cjne a, w+1, keep_playing
+	dec w+2
+	
+keep_playing:
+
+	lcall Send_SPI ; Read the next byte from the SPI Flash...
+	mov AD1DAT3, a ; and send it to the DAC
+	
+	sjmp CCU_ISR_Done
+
+stop_playing:
+	clr TMOD20 ; Stop CCU timer
+	setb FLASH_CE  ; Disable SPI Flash
+
+CCU_ISR_Done:	
+	pop psw
+	pop acc
+	clr P2.6
+	reti
 
 ;---------------------------------;
 ; ISR for timer 2.  Runs evere ms ;
@@ -780,6 +844,12 @@ Display_reflow_time:
 	Display_BCD(rtime)
     ret
     
+   
+;ADDING AUDIO
+   
+   
       
+     
+end
       
 
