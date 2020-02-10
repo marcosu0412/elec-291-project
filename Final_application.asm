@@ -499,7 +499,7 @@ dec_soak_temp:
     da a
     cjne a, #0x29,dec_soak_temp_1
     mov a, #0x70
-    mov stime, a
+    mov stemp, a
    	ljmp soak_temp_done
 dec_soak_temp_1:
     	ljmp soak_temp_done
