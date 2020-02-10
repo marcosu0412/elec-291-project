@@ -13,7 +13,7 @@ org 0x005B
 	ljmp CCU_ISR	
 
 $NOLIST
-$include(LCD_4bit_LPC9351.inc)
+$include(LCD_4bit.inc)
 $LIST
 
 $NOLIST
@@ -313,6 +313,21 @@ getchar_L1:
 	mov	a,SBUF
 	ret
 
+Wait10us:
+    mov R0, #18
+    djnz R0, $ ; 2 machine cycles-> 2*0.27126us*18=10us
+	ret
+
+Wait1S:
+	mov R2, #40
+L3_1:	mov R1, #250
+L2_1:	mov R0, #184
+L1_1:	djnz R0, L1_1 ; 2 machine cycles-> 2*0.27126us*184=100us
+	djnz R1, L2_1 ; 100us*250=0.025s
+	djnz R2, L3_1 ; 0.025s*40=1s
+	ret
+
+
 ;---------------------------------;
 ; Initialize the serial port      ;
 ;---------------------------------;
@@ -458,7 +473,7 @@ Hex_to_bcd_8bit:
 main:
 	; Initialization of hardware
 	mov SP, #0x7F
-	lcall Timer2_Init
+	lcall Timer0_Init
 	; Turn off all the LEDs
 	; mov LEDRA, #0 ; LEDRA is bit addressable
 	; mov LEDRB, #0 ; LEDRB is NOT bit addresable
@@ -515,7 +530,7 @@ check_abort:
         mov a, ctemp+1
         cjne a, #0x02, abort_return
 		mov a, ctemp 
-		cjne a, #0x50, abort_return
+		cjne a, #0x43, abort_return
 		setb abort_flag
 		ret 
 abort_return:
@@ -571,7 +586,7 @@ Default_state:
 	jb button_state, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_state, $
 	jb sw_start_stop, param_adjust ;if switch down, adjust parameters
-	setb TF2; Start the timer 
+	setb TR0; Start the timer 
     ljmp loop
 
 param_adjust:
@@ -679,7 +694,8 @@ soak_time_done:
     jnb button_state, $
     
     inc adjust_state
-    ljmp param_state
+    ljmp param_adjust
+    
 
 reflow_temp:
     lcall Display_reflow_temperature
@@ -723,7 +739,7 @@ reflow_temp_done:
     ljmp param_adjust
 
 reflow_time:
-    lcall display_reflow
+    lcall Display_reflow_time
     jb button_updown, to_param_adjust_2
     Wait_Milli_Seconds(#50)
     jb button_updown, to_param_adjust_2
@@ -804,7 +820,7 @@ to_loop:
 
 state2_done:
     inc oven_state
-	clr tt 
+	mov tt, #0 
 	ljmp loop
 
 state3:		;Ramp to Peak
@@ -823,7 +839,7 @@ state3_2:
 	jz done_ramp_to_reflow
     ljmp loop
 done_ramp_to_reflow:
-    inc state
+    inc oven_state
 	mov tt, rtime 
 	ljmp loop
 
@@ -841,7 +857,7 @@ to_loop_1:
 
 state4_done:
     inc oven_state
-	clr tt 
+	mov tt, #0
 	ljmp loop
 
 state5:		;Cooling   
@@ -858,7 +874,7 @@ state5_2:
 	jz done_cooling
 	ljmp loop 
 done_cooling:
-    inc state 
+    inc oven_state 
 	ljmp loop 	
 
 	
