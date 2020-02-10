@@ -257,6 +257,62 @@ InitADC_L1:
 	jnb	acc.3,InitADC
 	ret
 
+putchar:
+	jbc	TI,putchar_L1
+	sjmp putchar
+putchar_L1:
+	mov	SBUF,a
+	ret
+	
+getchar:
+	jbc	RI,getchar_L1
+	sjmp getchar
+getchar_L1:
+	mov	a,SBUF
+	ret
+
+SendTemp:
+	mov dptr, #HexAscii 
+	
+	mov a, bcd+1
+	swap a
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+	mov a, bcd+1
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+
+	mov a, #'.'
+	lcall putchar
+
+	mov a, bcd+0
+	swap a
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+	mov a, bcd+0
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+	
+	mov a, #'\r'
+	lcall putchar
+	mov a, #'\n'
+	lcall putchar	
+	ret
+	
+SendString:
+    clr a
+    movc a, @a+dptr
+    jz SendString_L1
+    lcall putchar
+    inc dptr
+    sjmp SendString  
+SendString_L1:
+	ret
+
 
 ; The 8-bit hex number passed in the accumulator is converted to
 ; BCD and stored in [R1, R0]
