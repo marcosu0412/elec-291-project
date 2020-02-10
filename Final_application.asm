@@ -20,6 +20,14 @@ $include(math32.inc)
 $LIST
 
 
+; Reset vector
+org 0x0000
+    ljmp main
+
+; Timer/Counter 2 overflow interrupt vector
+org 0x002B
+	ljmp Timer2_ISR
+
 CLK           EQU 14746000 ; Microcontroller system crystal frequency in Hz
 TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
 TIMER2_RELOAD EQU ((65536-(CLK/(12*TIMER2_RATE))))
@@ -109,13 +117,6 @@ DB 'Cooling ', 0
 displayabort:
 DB 'Aborting...', 0
 
-; Reset vector
-org 0x0000
-    ljmp main
-
-; Timer/Counter 2 overflow interrupt vector
-org 0x002B
-	ljmp Timer2_ISR
 
 ;---------------------------------;
 ; Flags				  ;
@@ -366,24 +367,35 @@ loop:
         lcall check_abort
         jb abort_flag, abort
 	    lcall accumulate_loop_start
-		Send_BCD(ctemp+1)
-		cjne oven_state, #0, checkmain1
+		clr a 
+	    mov a, oven_state
+		cjne a, #0, checkmain1
 		ljmp state1 ; jump to ramp to soak
-checkmain1:	cjne oven_state, #1, checkmain2
+checkmain1:	
+        cjne a, #1, checkmain2
+		clr a
 		ljmp state2 ; jump to soak
 		
-checkmain2:	cjne oven_state, #2, checkmain3
+checkmain2:	
+        cjne a, #2, checkmain3
+		clr a 
 		ljmp state3 ; jump to ramp to peak
 		
-checkmain3:	cjne oven_state, #3, checkmain4
+checkmain3:	
+        cjne a, #3, checkmain4
+		clr a 
 		ljmp state4 ; jump to reflow
 		
-checkmain4:	cjne oven_state, #4, abort
+checkmain4:	
+        cjne a, #4, abort
+		clr a 
 		ljmp state5 ; jump to cooling 
 
 check_abort:
-        cjne ctemp+1, #0x02, abort_return
-		cjne ctemp, #0x50, abort_return
+        mov a, ctemp+1
+        cjne a, #0x02, abort_return
+		mov a, ctemp 
+		cjne a, #0x50, abort_return
 		setb abort_flag
 		ret 
 abort_return:
@@ -435,29 +447,34 @@ Default_state:
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb button_state, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_state, $
-	jb sw_start_stop, param_adjust ;if switch down, adjust parameters	
+	jb sw_start_stop, param_adjust ;if switch down, adjust parameters
+	setb TF2; Start the timer 
     ljmp loop
 
 param_adjust:
     jnb     sw_start_stop, default_state
-	cjne 	adjust_state, #0, check1 ;jump if bit set (switch down)
+	mov a, adjust_state
+	cjne 	a, #0, check1 ;jump if bit set (switch down)
 	ljmp 	soak_temp
 check1:
-	cjne adjust_state, #1, check2
+    mov a, adjust_state
+	cjne a, #1, check2
+	clr a 
 	ljmp soak_time
 check2:
-	cjne adjust_state, #2, check3
+	cjne a, #2, check3
+	clr a 
 	ljmp reflow_temp
     
 check3:
   	ljmp reflow_time
-    ret     
+    ret  
     
 ;in each of these, change display and read button_updown to adjust
 ;also read button_state to inc adjust_state
 soak_temp:
     lcall Display_soak_temperature
-    jb button_updown, param_adjust //check if button_down is pressed. 
+    jb button_updown, param_adjust ;check if button_down is pressed. 
 	Wait_Milli_Seconds(#50)	
 	jb button_updown, param_adjust
 	jnb button_updown, $
@@ -471,14 +488,14 @@ inc_soak_temp:
     da a
     cjne a, #0x71, inc_soak_temp_1
     mov a, #0x30
-    mov stime, a
+    mov stemp, a
     ljmp soak_temp_done
 inc_soak_temp_1:
     ljmp soak_temp_done
     
 dec_soak_temp:
     mov a, stemp
-    dec a, #0x01
+    subb a, #0x01
     da a
     cjne a, #0x29,dec_soak_temp_1
     mov a, #0x70
@@ -500,7 +517,7 @@ soak_temp_done:
 
 soak_time:
     lcall Display_soak_time
-    jb button_updown, param_adjust //check if button_down is pressed. 
+    jb button_updown, param_adjust ; check if button_down is pressed. 
     Wait_Milli_Seconds(#50)	
     jb button_updown, param_adjust
     jnb button_updown, $
@@ -519,7 +536,7 @@ inc_soak_time_1:
     
 dec_soak_time:
     mov a, stime
-    dec a, #0x01
+    dec a 
     da a
     cjne a, #0x59,dec_soak_time_1
     mov a, #0x90
@@ -539,7 +556,7 @@ soak_time_done:
 
 reflow_temp:
     lcall Display_reflow_temperature
-    jb button_updown, param_adjust //check if button_down is pressed. 
+    jb button_updown, param_adjust ; check if button_down is pressed. 
     Wait_Milli_Seconds(#50)	
     jb button_updown, param_adjust
     jnb button_updown, $
@@ -558,7 +575,7 @@ inc_reflow_temp_1:
     
 dec_reflow_temp:
     mov a, rtemp
-    dec a, #0x01
+    dec a 
     da a
     cjne a, #0x18, dec_reflow_temp_1
     mov a, #0x30
@@ -622,7 +639,7 @@ Oven_Control:
 state1: 	;Ramp to Soak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate1)
-    mov pwm #255 ; 100% power
+    mov pwm, #255 ; 100% power
 	mov a, stemp ; a equals setting temp lower bit
     clr c 
 	subb a, ctemp
@@ -645,7 +662,8 @@ state2: 	;Soak
 	Send_Constant_String(#displaystate2)
 	mov pwm, #102 ; 40% power 
 	dec tt
-	cjne tt, #0, loop
+	mov a, tt 
+	cjne a, #0, loop
     ljmp state2_done
 state2_done:
     inc oven_state
@@ -677,7 +695,8 @@ state4:		;reflow
 	Send_Constant_String(#displaystate4)
     mov pwm, #((255*20)/100) ; 20% of power
     dec tt
-	cjne tt, #0, loop
+	mov a, tt 
+	cjne a, #0, loop
 	ljmp state4_done
 state4_done:
     inc oven_state
@@ -705,7 +724,7 @@ abort:
     Set_Cursor(1,1)
 	Send_Constant_String(#displayabort)
     mov pwm, #0
-	ljmp end
+	
 
 
 
