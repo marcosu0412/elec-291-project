@@ -7,18 +7,13 @@
 ; is detected, the program resets Count3 to zero.  
 ;
 $NOLIST
-$MODDE1SOC
+$MOD9351
 $LIST
 
 $NOLIST
 $include(LCD_4bit.inc)
-$LIST
-
-
-$NOLIST
 $include(math32.inc)
 $LIST
-
 
 CLK           EQU 14746000 ; Microcontroller system crystal frequency in Hz
 TIMER2_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
