@@ -57,7 +57,7 @@ READ_DEVICE_ID   EQU 0x9f  ; Address:0 Dummy:2 Num:1 to infinite
 dseg at 0x30
 Count1ms: ds 2; Used to determine when half a second has passed
 w:		ds 3; 24-bit play counter. Decremented in CCU ISR
-ctemp: ds 4   ; current temperature
+ctemp: ds 2   ; current temperature
 ctime: ds 4   ; current time
 
 rtemp:			 ds 2   ; reflow  temperature
@@ -463,30 +463,16 @@ Hex_to_bcd_8bit:
 	ret
 	
 
-;Macro to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)
-Temp_Check mac 	;input the temp that needs to be maintained
-	push ar0
-	push ar1
-	mov r0, %0
-	mov r1, ctemp
-	lcall ?Temp_Check
-	pop ar1
-	pop ar0
-endmac
-?Temp_Check:
+;Function to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)
+Temp_Check:
 	push acc
-	mov a, r0+1
-	subb a, r1+1
+	mov a, r0 	;r0 is desired temp
+	subb a, r1	;r1 is current temp
 	jc Power_off
-	cjne r0+1,r1+1, Power_on 	;checking upper bytes of temperature
 	clr c
-	
-	mov a, r0+0
-	subb a, r1+0
-	jc Power_off
-	cjne r0, r1, Power_on 		;checking lower bytes of temperature
-	
-	pop acc 			;return without changing power output if temperature is correct
+	mov a, r0
+	cjne a,r1, Power_on 	;checking temperature
+	pop acc 		;return without changing power output if temperature is correct
 	ret
 Power_off:
 	mov POWER_OUT, #0
@@ -820,19 +806,22 @@ Oven_Control:
 state1: 	;Ramp to Soak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate1)
-	mov a, stemp ; a equals setting temp lower bit
-    clr c 
-	subb a, ctemp
-	jc state1_2
-    ljmp loop 
+	;mov a, stemp ; a equals setting temp lower bit
+    	;clr c 
+	;subb a, ctemp
+	;jc state1_2
+	mov r0, stemp
+	mov r1, ctemp
+	lcall Temp_check
+    	ljmp loop 
 state1_2:
-    mov a, stemp+1
-    clr c 
+    	mov a, stemp+1
+    	clr c 
 	subb a, ctemp+1
 	jz done_ramp_to_soak
-    ljmp loop
+    	ljmp loop
 done_ramp_to_soak:
-    inc oven_state
+    	inc oven_state
 	mov tt, stime
 	ljmp loop
         
