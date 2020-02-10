@@ -461,7 +461,18 @@ Hex_to_bcd_8bit:
 	orl a, b
 	mov R0, a
 	ret
-;Macro to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)	
+	
+
+;Macro to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)
+Temp_Check mac 	;input the temp that needs to be maintained
+	push ar0
+	push ar1
+	mov r0, %0
+	mov r1, ctemp
+	lcall ?Temp_Check
+	pop ar1
+	pop ar0
+endmac
 ?Temp_Check:
 	push acc
 	mov a, r0+1
