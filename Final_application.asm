@@ -39,13 +39,13 @@ BRVAL EQU ((XTAL/BAUD)-16)
 ;---------------------------------;
 ; LCD Pins			  ;
 ;---------------------------------;
-LCD_RS equ P0.7
-LCD_RW equ P3.0
-LCD_E  equ P3.1
-LCD_D4 equ P2.0
-LCD_D5 equ P2.1
-LCD_D6 equ P2.2
-LCD_D7 equ P2.3
+LCD_RS equ P1.6
+LCD_RW equ P1.4
+LCD_E  equ P1.3
+LCD_D4 equ P0.3
+LCD_D5 equ P0.2
+LCD_D6 equ P0.1
+LCD_D7 equ P0.0
 
 ;---------------------------------;
 ; Button/Switch Pins		  ;
