@@ -65,6 +65,7 @@ stemp:			 ds 2   ; soak temperature
 rtime:			 ds 2   ; reflow time
 stime:		   	 ds 2   ; soak time
 tt:              ds 1 ; temporary variable to hold stime 
+ttemp: 			ds 2 ; temporary temperature
 
 adjust_state: ds 1
 oven_state: ds 1
@@ -464,18 +465,16 @@ Hex_to_bcd_8bit:
 	
 
 ;Function to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)
-Temp_Check:
+Temp_Set:
 	push acc
-	mov a, r0 	;r0 is desired temp
-	subb a, r1	;r1 is current temp
-	jc Power_off
-	clr c
-	mov a, r0
-	cjne a,ctemp, Power_on 	;checking temperature
-	pop acc 		;return without changing power output if temperature is correct
+	cjne ttemp, ctemp, carry_check 	;desired temp is loaded into ttemp
+	pop acc				;if current temp and desired temp are the same, do nothing
 	ret
+Carry_check:
+	jc Power_off 	;if ctemp larger than desired temp, turn off power
+	sjmp Power_on	;else turn on power
 Power_off:
-    clr POWER_OUT 
+    	clr POWER_OUT 
 	pop acc
 	ret
 Power_on:
@@ -812,6 +811,7 @@ state1: 	;Ramp to Soak
 	;jc state1_2
 	mov r0, stemp
 	mov r1, ctemp
+	
 	lcall Temp_check
     	ljmp loop 
 state1_2:
