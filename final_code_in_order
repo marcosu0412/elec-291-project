@@ -450,8 +450,6 @@ Hex_to_bcd_8bit:
 	orl a, b
 	mov R0, a
 	ret
-
-
 ;---------------------------------;
 ; Main program. Includes hardware ;
 ; initialization and 'forever'    ;
@@ -522,7 +520,10 @@ check_abort:
 		ret 
 abort_return:
         ret       
-
+abort:
+    Set_Cursor(1,1)
+	Send_Constant_String(#displayabort)
+    mov pwm, #0
 
 accumulate_loop_start:
         ; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
@@ -592,11 +593,6 @@ check3:
   	ljmp reflow_time
     ret 
 
-abort:
-    Set_Cursor(1,1)
-	Send_Constant_String(#displayabort)
-    mov pwm, #0
-	    
 
 ;in each of these, change display and read button_updown to adjust
 ;also read button_state to inc adjust_state
@@ -647,10 +643,13 @@ soak_time:
     lcall Display_soak_time
     jb button_updown, param_adjust ; check if button_down is pressed. 
     Wait_Milli_Seconds(#50)	
-    jb button_updown, param_adjust
+    jb button_updown, to_param_adjust
     jnb button_updown, $
     jb sw_updown, dec_soak_time
-    
+
+to_param_adjust:
+    ljmp param_adjust
+
 inc_soak_time:
     mov a, stime
     add a, #0x01
@@ -684,12 +683,15 @@ soak_time_done:
 
 reflow_temp:
     lcall Display_reflow_temperature
-    jb button_updown, param_adjust ; check if button_down is pressed. 
+    jb button_updown, to_param_adjust_1 ; check if button_down is pressed. 
     Wait_Milli_Seconds(#50)	
-    jb button_updown, param_adjust
+    jb button_updown, to_param_adjust_1
     jnb button_updown, $
     jb sw_updown, dec_reflow_temp
-	
+
+to_param_adjust_1:
+    ljmp param_adjust
+
 inc_reflow_temp:
     mov a, rtemp
     add a, #0x01
@@ -722,11 +724,14 @@ reflow_temp_done:
 
 reflow_time:
     lcall display_reflow
-    jb button_updown, param_adjust
+    jb button_updown, to_param_adjust_2
     Wait_Milli_Seconds(#50)
-    jb button_updown, param_adjust
+    jb button_updown, to_param_adjust_2
     jnb button_updown, $
     jb sw_updown, dec_reflow_time
+
+to_param_adjust_2:
+    ljmp param_adjust
 	
 inc_reflow_time:
 	mov a, rtime
@@ -751,9 +756,9 @@ dec_reflow_time_1:
 	ljmp reflow_time_done
 	
 reflow_time_done:
-	jb button_state, reflow_temp
+	jb button_state, reflow_time
 	Wait_Milli_seconds(#50)
-	jb button_state, reflow_temp
+	jb button_state, reflow_time
 	jnb button_state, $
 	mov adjust_state, #0
 	ljmp param_adjust
@@ -791,8 +796,12 @@ state2: 	;Soak
 	mov pwm, #102 ; 40% power 
 	dec tt
 	mov a, tt 
-	cjne a, #0, loop
+	cjne a, #0, to_loop
     ljmp state2_done
+
+to_loop:
+    ljmp loop     
+
 state2_done:
     inc oven_state
 	clr tt 
@@ -824,8 +833,12 @@ state4:		;reflow
     mov pwm, #((255*20)/100) ; 20% of power
     dec tt
 	mov a, tt 
-	cjne a, #0, loop
+	cjne a, #0, to_loop_1
 	ljmp state4_done
+
+to_loop_1:
+    ljmp loop
+
 state4_done:
     inc oven_state
 	clr tt 
@@ -903,6 +916,13 @@ Display_reflow_time:
 
 end     
       
+
+
+
+
+
+
+
 
 
 
