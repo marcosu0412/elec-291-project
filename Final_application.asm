@@ -583,7 +583,44 @@ main:
 	; After initialization the program stays in this 'forever' loop
 	lcall Default_state ;starts off in default display screen until button pressed
 
-loop:   
+loop:  
+
+
+	jb RI, serial_get
+	jb P3.0, forever_loop ; Check if push-button pressed
+	jnb P3.0, $ ; Wait for push-button release
+	; Play the whole memory
+	clr TMOD20 ; Stop the CCU from playing previous request
+	setb FLASH_CE
+	
+	clr FLASH_CE ; Enable SPI Flash
+	mov a, #READ_BYTES
+	lcall Send_SPI
+	; Set the initial position in memory where to start playing
+	mov a, #0
+	lcall Send_SPI
+	mov a, #0
+	lcall Send_SPI
+	mov a, #0xff
+	lcall Send_SPI
+	; How many bytes to play? All of them!  Asume 4Mbytes memory
+	mov w+2, #0x3f
+	mov w+1, #0xff
+	mov w+0, #0x00
+	
+	mov a, #0x00 ; Request first byte to send to DAC
+	lcall Send_SPI
+	
+	setb TMOD20 ; Start playback by enabling CCU timer
+
+
+
+
+
+
+
+
+
         lcall check_abort
         jb abort_flag, abort
 	    lcall accumulate_loop_start
@@ -591,6 +628,9 @@ loop:
 	    mov a, oven_state
 		cjne a, #0, checkmain1
 		ljmp state1 ; jump to ramp to soak
+		
+		
+		
 checkmain1:	
         cjne a, #1, checkmain2
 		clr a
