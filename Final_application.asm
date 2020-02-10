@@ -214,6 +214,149 @@ CCU_ISR_Done:
 	pop acc
 	clr P2.6
 	reti
+;---------------------------------;
+; Initial configuration of ports. ;
+; After reset the default for the ;
+; pins is 'Open Drain'.  This     ;
+; routine changes them pins to    ;
+; Quasi-bidirectional like in the ;
+; original 8051.                  ;
+; Notice that P1.2 and P1.3 are   ;
+; always 'Open Drain'. If those   ;
+; pins are to be used as output   ;
+; they need a pull-up resistor.   ;
+;---------------------------------;
+Ports_Init:
+    ; Configure all the ports in bidirectional mode:
+    mov P0M1, #00H
+    mov P0M2, #00H
+    mov P1M1, #00H
+    mov P1M2, #00H ; WARNING: P1.2 and P1.3 need 1 kohm pull-up resistors if used as outputs!
+    mov P2M1, #00H
+    mov P2M2, #00H
+    mov P3M1, #00H
+    mov P3M2, #00H
+	ret
+
+;---------------------------------;
+; Sends a byte via serial port    ;
+;---------------------------------;
+putchar:
+	jbc	TI,putchar_L1
+	sjmp putchar
+putchar_L1:
+	mov	SBUF,a
+	ret
+
+;---------------------------------;
+; Receive a byte from serial port ;
+;---------------------------------;
+getchar:
+	jbc	RI,getchar_L1
+	sjmp getchar
+getchar_L1:
+	mov	a,SBUF
+	ret
+
+;---------------------------------;
+; Initialize the serial port      ;
+;---------------------------------;
+InitSerialPort:
+	mov	BRGCON,#0x00
+	mov	BRGR1,#high(BRVAL)
+	mov	BRGR0,#low(BRVAL)
+	mov	BRGCON,#0x03 ; Turn-on the baud rate generator
+	mov	SCON,#0x52 ; Serial port in mode 1, ren, txrdy, rxempty
+	; Make sure that TXD(P1.0) and RXD(P1.1) are configured as bidrectional I/O
+	anl	P1M1,#11111100B
+	anl	P1M2,#11111100B
+	ret
+
+;---------------------------------;
+; Initialize ADC1/DAC1 as DAC1.   ;
+; Warning, the ADC1/DAC1 can work ;
+; only as ADC or DAC, not both.   ;
+; The P89LPC9351 has two ADC/DAC  ;
+; interfaces.  One can be used as ;
+; ADC and the other can be used   ;
+; as DAC.  Also configures the    ;
+; pin associated with the DAC, in ;
+; this case P0.4 as 'Open Drain'. ;
+;---------------------------------;
+InitDAC:
+    ; Configure pin P0.4 (DAC1 output pin) as open drain
+	orl	P0M1,   #00010000B
+	orl	P0M2,   #00010000B
+    mov ADMODB, #00101000B ; Select main clock/2 for ADC/DAC.  Also enable DAC1 output (Table 25 of reference manual)
+	mov	ADCON1, #00000100B ; Enable the converter
+	mov AD1DAT3, #0x80     ; Start value is 3.3V/2 (zero reference for AC WAV file)
+	ret
+
+;---------------------------------;
+; Change the internal RC osc. clk ;
+; from 7.373MHz to 14.746MHz.     ;
+;---------------------------------;
+Double_Clk:
+    mov dptr, #CLKCON
+    movx a, @dptr
+    orl a, #00001000B ; double the clock speed to 14.746MHz
+    movx @dptr,a
+	ret
+
+;---------------------------------;
+; Initialize the SPI interface    ;
+; and the pins associated to SPI. ;
+;---------------------------------;
+Init_SPI:
+	; Configure MOSI (P2.2), CS* (P2.4), and SPICLK (P2.5) as push-pull outputs (see table 42, page 51)
+	anl P2M1, #low(not(00110100B))
+	orl P2M2, #00110100B
+	; Configure MISO (P2.3) as input (see table 42, page 51)
+	orl P2M1, #00001000B
+	anl P2M2, #low(not(00001000B)) 
+	; Configure SPI
+	mov SPCTL, #11010000B ; Ignore /SS, Enable SPI, DORD=0, Master=1, CPOL=0, CPHA=0, clk/4
+	ret
+
+;---------------------------------;
+; Sends AND receives a byte via   ;
+; SPI.                            ;
+;---------------------------------;
+Send_SPI:
+	mov SPDAT, a
+Send_SPI_1:
+	mov a, SPSTAT 
+	jnb acc.7, Send_SPI_1 ; Check SPI Transfer Completion Flag
+	mov SPSTAT, a ; Clear SPI Transfer Completion Flag
+	mov a, SPDAT ; return received byte via accumulator
+	ret
+
+;---------------------------------;
+; SPI flash 'write enable'        ;
+; instruction.                    ;
+;---------------------------------;
+Enable_Write:
+	clr FLASH_CE
+	mov a, #WRITE_ENABLE
+	lcall Send_SPI
+	setb FLASH_CE
+	ret
+
+;---------------------------------;
+; This function checks the 'write ;
+; in progress' bit of the SPI     ;
+; flash memory.                   ;
+;---------------------------------;
+Check_WIP:
+	clr FLASH_CE
+	mov a, #READ_STATUS
+	lcall Send_SPI
+	mov a, #0x55
+	lcall Send_SPI
+	setb FLASH_CE
+	jb acc.0, Check_WIP ;  Check the Write in Progress bit
+	ret
+	
 
 ;---------------------------------;
 ; ISR for timer 2.  Runs evere ms ;
@@ -403,10 +546,23 @@ main:
 	; Initialization of hardware
 	mov SP, #0x7F
 	lcall Timer2_Init
+	lcall Ports_Init ; Default all pins as bidirectional I/O. See Table 42.
+    	lcall Double_Clk
+	lcall InitSerialPort
+	lcall InitDAC ; Call after 'Ports_Init
+	lcall CCU_Init
+	lcall Init_SPI
+	
+	clr TMOD20 ; Stop CCU timer
 	; Turn off all the LEDs
 	; mov LEDRA, #0 ; LEDRA is bit addressable
 	; mov LEDRB, #0 ; LEDRB is NOT bit addresable
 	setb EA   ; Enable Global interrupts
+    
+    
+    
+    
+    
     
     	; Initialize variables
 	clr abort_flag
