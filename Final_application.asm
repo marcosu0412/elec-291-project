@@ -306,24 +306,33 @@ main:
 	; After initialization the program stays in this 'forever' loop
 	lcall Default_state ;starts off in default display screen until button pressed
 
-loop: 
+loop:   
+        lcall check_abort
         jb abort_flag, abort
 	    lcall accumulate_loop_start
+		Send_BCD(ctemp+1)
 		cjne oven_state, #0, checkmain1
-		ljmp state1
+		ljmp state1 ; jump to ramp to soak
 checkmain1:	cjne oven_state, #1, checkmain2
-		ljmp state1
+		ljmp state2 ; jump to soak
 		
 checkmain2:	cjne oven_state, #2, checkmain3
-		ljmp state1
+		ljmp state3 ; jump to ramp to peak
 		
 checkmain3:	cjne oven_state, #3, checkmain4
-		ljmp state1
+		ljmp state4 ; jump to reflow
 		
 checkmain4:	cjne oven_state, #4, abort
-		ljmp state1
+		ljmp state5 ; jump to cooling 
 
-abort:
+check_abort:
+        cjne ctemp+1, #0x02, abort_return
+		cjne ctemp, #0x50, abort_return
+		setb abort_flag
+		ret 
+abort_return:
+        ret       
+
 
 accumulate_loop_start:
         ; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
@@ -386,7 +395,7 @@ check2:
     
 check3:
   	ljmp reflow_time
-        ret     
+    ret     
     
 ;in each of these, change display and read button_updown to adjust
 ;also read button_state to inc adjust_state
@@ -557,7 +566,6 @@ Oven_Control:
 state1: 	;Ramp to Soak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate1)
-
     mov pwm #255 ; 100% power
 	mov a, stemp ; a equals setting temp lower bit
     clr c 
@@ -620,13 +628,30 @@ state4_done:
 	clr tt 
 	ljmp loop
 
-state5:		;Cooling   not sure about this state 
+state5:		;Cooling   
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate5)
-	mov pwm, #0 ; 
+	mov pwm, #0 ; 0% power
 	mov a, ctemp
+	clr c
+    subb a,#0x60
+	jc state5_2
 	ljmp loop
- 
+state5_2:
+    mov a, ctemp+1
+	jz done_cooling
+	ljmp loop 
+done_cooling:
+    inc state 
+	ljmp loop 	
+
+abort:
+    Set_Cursor(1,1)
+	Send_Constant_String(#displayabort)
+    mov pwm, #0
+	ljmp end
+
+
 
 Display_oven_time:
 	Set_Cursor(2,1)
