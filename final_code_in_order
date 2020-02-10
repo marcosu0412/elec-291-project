@@ -471,15 +471,15 @@ Temp_Check:
 	jc Power_off
 	clr c
 	mov a, r0
-	cjne a,r1, Power_on 	;checking temperature
+	cjne a,ctemp, Power_on 	;checking temperature
 	pop acc 		;return without changing power output if temperature is correct
 	ret
 Power_off:
-	mov POWER_OUT, #0
+    clr POWER_OUT 
 	pop acc
 	ret
 Power_on:
-	mov POWER_OUT, #1
+	setb POWER_OUT
 	pop acc
 	ret
 ;---------------------------------;
@@ -554,7 +554,7 @@ abort_return:
 abort:
     Set_Cursor(1,1)
 	Send_Constant_String(#displayabort)
-    mov POWER_OUT, #0
+    clr POWER_OUT
     
 
 
