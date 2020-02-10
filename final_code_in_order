@@ -809,16 +809,12 @@ state1: 	;Ramp to Soak
     	;clr c 
 	;subb a, ctemp
 	;jc state1_2
-	mov r0, stemp
-	mov r1, ctemp
-	
+	mov ttemp, stemp
 	lcall Temp_check
+	cjne stemp, ctemp, state1_2
     	ljmp loop 
 state1_2:
-    	mov a, stemp+1
-    	clr c 
-	subb a, ctemp+1
-	jz done_ramp_to_soak
+	jc done_ramp_to_soak
     	ljmp loop
 done_ramp_to_soak:
     	inc oven_state
