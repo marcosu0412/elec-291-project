@@ -12,12 +12,9 @@ $LIST
 
 $NOLIST
 $include(LCD_4bit.inc)
-$LIST
-
-
-$NOLIST
 $include(math32.inc)
 $LIST
+
 
 
 ; Reset vector
@@ -38,6 +35,23 @@ PEAK_TEMPERATURE EQU 260
 XTAL EQU 7373000
 BAUD EQU 115200
 BRVAL EQU ((XTAL/BAUD)-16)
+
+FLASH_CE EQU P2.4
+
+
+; Commands supported by the SPI flash memory according to the datasheet
+WRITE_ENABLE     EQU 0x06  ; Address:0 Dummy:0 Num:0
+WRITE_DISABLE    EQU 0x04  ; Address:0 Dummy:0 Num:0
+READ_STATUS      EQU 0x05  ; Address:0 Dummy:0 Num:1 to infinite
+READ_BYTES       EQU 0x03  ; Address:3 Dummy:0 Num:1 to infinite
+READ_SILICON_ID  EQU 0xab  ; Address:0 Dummy:3 Num:1 to infinite
+FAST_READ        EQU 0x0b  ; Address:3 Dummy:1 Num:1 to infinite
+WRITE_STATUS     EQU 0x01  ; Address:0 Dummy:0 Num:1
+WRITE_BYTES      EQU 0x02  ; Address:3 Dummy:0 Num:1 to 256
+ERASE_ALL        EQU 0xc7  ; Address:0 Dummy:0 Num:0
+ERASE_BLOCK      EQU 0xd8  ; Address:3 Dummy:0 Num:0
+READ_DEVICE_ID   EQU 0x9f  ; Address:0 Dummy:2 Num:1 to infinite
+
 
 ;---------------------------------;
 ; LCD Pins			  ;
@@ -68,6 +82,7 @@ POWER_OUT 	equ P2.7
 ; Variable Names		  ;
 ;---------------------------------;
 dseg at 0x30
+w:		ds 3; 24-bit play counter. Decremented in CCU ISR
 Count1ms: ds 2; Used to determine when half a second has passed
 ctemp: ds 4   ; current temperature
 ctime: ds 4   ; current time
