@@ -467,7 +467,10 @@ Hex_to_bcd_8bit:
 ;Function to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)
 Temp_Set:
 	push acc
-	cjne ttemp, ctemp, carry_check 	;desired temp is loaded into ttemp
+	mov a, ttemp+1
+	cjne a, ctemp+1, carry_check
+	mov a, ttemp
+	cjne a, ctemp, carry_check
 	pop acc				;if current temp and desired temp are the same, do nothing
 	ret
 Carry_check:
@@ -811,7 +814,10 @@ state1: 	;Ramp to Soak
 	;jc state1_2
 	mov ttemp, stemp
 	lcall Temp_check
-	cjne stemp, ctemp, state1_2
+	mov a, stemp+1
+	cjne a, ctemp+1, state1_2
+	mov a, stemp
+	cjne a, ctemp, state1_2
     	ljmp loop 
 state1_2:
 	jc done_ramp_to_soak
@@ -841,19 +847,18 @@ state2_done:
 state3:		;Ramp to Peak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate3)
-	mov a, rtemp ; a equals setting temp
-	clr c
-	subb a, ctemp  ; compare setting temp and ctemp
-	jc state3_2     
+	mov ttemp, rtemp
+	lcall Temp_check
+	mov a, rtemp+1
+	cjne a, ctemp+1, state3_2
+	mov a, rtemp
+	cjne a, ctemp, state3_2    
 	ljmp loop 
 state3_2:
-    mov a, rtemp+1
-	clr c
-	subb a, ctemp+1
-	jz done_ramp_to_reflow
-    ljmp loop
+	jc done_ramp_to_reflow
+    	ljmp loop
 done_ramp_to_reflow:
-    inc oven_state
+    	inc oven_state
 	mov tt, rtime 
 	ljmp loop
 
@@ -876,17 +881,18 @@ state4_done:
 state5:		;Cooling   
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate5)
-	mov a, ctemp
-	clr c
-    subb a,#0x60
-	jc state5_2
+	mov ttemp, #0x40
+	lcall Temp_check 	;turn oven off
+	mov a, #0x00
+	cjne a, ctemp+1, state5_2
+	mov a, #0x40
+	cjne a, ctemp, state5_2 
 	ljmp loop
 state5_2:
-    mov a, ctemp+1
-	jz done_cooling
+	jc done_cooling
 	ljmp loop 
 done_cooling:
-    inc oven_state 
+    	inc oven_state 
 	ljmp loop 	
 
 	
@@ -915,32 +921,32 @@ Display_oven_temp:
 	ret
 
 Display_soak_time:
-    Set_Cursor(1,1)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#setsoaktime)
 	Set_Cursor(2,1)
 	Display_BCD(stime)
 	ret 
 
 Display_soak_temperature:
-    Set_Cursor(1,1)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#setsoaktemperature)
 	Set_Cursor(2,1)
 	Display_BCD(stemp)
 	ret
 
 Display_reflow_temperature:
-    Set_Cursor(1,1)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#setreflowtemperature)    
 	Set_Cursor(2,1)
 	Display_BCD(rtemp)
 	ret
 
 Display_reflow_time:
-    Set_Cursor(1,1)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#setreflowtime) 
 	Set_Cursor(2,1)   
 	Display_BCD(rtime)
-    ret
+    	ret
 
 end     
       
