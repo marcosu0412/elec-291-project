@@ -12,12 +12,9 @@ $LIST
 
 $NOLIST
 $include(LCD_4bit.inc)
-$LIST
-
-
-$NOLIST
 $include(math32.inc)
 $LIST
+
 
 
 ; Reset vector
@@ -27,6 +24,9 @@ org 0x0000
 ; Timer/Counter 2 overflow interrupt vector
 org 0x002B
 	ljmp Timer2_ISR
+	
+org 0x005b ; CCU interrupt vector.  Used in this code to replay the wave file.
+	ljmp CCU_ISR
 
 CLK           EQU 14746000 ; Microcontroller system crystal frequency in Hz
 CCU_RATE   EQU 1000     ; 1000Hz, for a timer tick of 1ms
@@ -35,6 +35,23 @@ PEAK_TEMPERATURE EQU 260
 XTAL EQU 7373000
 BAUD EQU 115200
 BRVAL EQU ((XTAL/BAUD)-16)
+
+FLASH_CE EQU P2.4
+
+
+; Commands supported by the SPI flash memory according to the datasheet
+WRITE_ENABLE     EQU 0x06  ; Address:0 Dummy:0 Num:0
+WRITE_DISABLE    EQU 0x04  ; Address:0 Dummy:0 Num:0
+READ_STATUS      EQU 0x05  ; Address:0 Dummy:0 Num:1 to infinite
+READ_BYTES       EQU 0x03  ; Address:3 Dummy:0 Num:1 to infinite
+READ_SILICON_ID  EQU 0xab  ; Address:0 Dummy:3 Num:1 to infinite
+FAST_READ        EQU 0x0b  ; Address:3 Dummy:1 Num:1 to infinite
+WRITE_STATUS     EQU 0x01  ; Address:0 Dummy:0 Num:1
+WRITE_BYTES      EQU 0x02  ; Address:3 Dummy:0 Num:1 to 256
+ERASE_ALL        EQU 0xc7  ; Address:0 Dummy:0 Num:0
+ERASE_BLOCK      EQU 0xd8  ; Address:3 Dummy:0 Num:0
+READ_DEVICE_ID   EQU 0x9f  ; Address:0 Dummy:2 Num:1 to infinite
+
 
 ;---------------------------------;
 ; LCD Pins			  ;
@@ -65,6 +82,7 @@ POWER_OUT 	equ P2.7
 ; Variable Names		  ;
 ;---------------------------------;
 dseg at 0x30
+w:		ds 3; 24-bit play counter. Decremented in CCU ISR
 Count1ms: ds 2; Used to determine when half a second has passed
 ctemp: ds 4   ; current temperature
 ctime: ds 4   ; current time
@@ -150,6 +168,210 @@ Timer2_Init:
 Timer2_start:
 	setb TR2 ; start timer 2
 	ret
+	
+;---------------------------------;
+; Routine to initialize the CCU.  ;
+; We are using the CCU timer in a ;
+; manner similar to the timer 2   ;
+; available in other 8051s        ;
+;---------------------------------;
+CCU_Init:
+	mov TH2, #high(CCU_RELOAD)
+	mov TL2, #low(CCU_RELOAD)
+	mov TOR2H, #high(CCU_RELOAD)
+	mov TOR2L, #low(CCU_RELOAD)
+	mov TCR21, #10000000b ; Latch the reload value
+	mov TICR2, #10000000b ; Enable CCU Timer Overflow Interrupt
+	setb ECCU ; Enable CCU interrupt
+	setb TMOD20 ; Start CCU timer
+	ret
+
+;---------------------------------;
+; ISR for CCU.  Used to playback  ;
+; the WAV file stored in the SPI  ;
+; flash memory.                   ;
+;---------------------------------;
+CCU_ISR:
+	mov TIFR2, #0 ; Clear CCU Timer Overflow Interrupt Flag bit. Actually, it clears all the bits!
+	setb P2.6 ; To check the interrupt rate with oscilloscope.
+	
+	; The registers used in the ISR must be saved in the stack
+	push acc
+	push psw
+	
+	; Check if the play counter is zero.  If so, stop playing sound.
+	mov a, w+0
+	orl a, w+1
+	orl a, w+2
+	jz stop_playing
+	
+	; Decrement play counter 'w'.  In this implementation 'w' is a 24-bit counter.
+	mov a, #0xff
+	dec w+0
+	cjne a, w+0, keep_playing
+	dec w+1
+	cjne a, w+1, keep_playing
+	dec w+2
+	
+keep_playing:
+
+	lcall Send_SPI ; Read the next byte from the SPI Flash...
+	mov AD1DAT3, a ; and send it to the DAC
+	
+	sjmp CCU_ISR_Done
+
+stop_playing:
+	clr TMOD20 ; Stop CCU timer
+	setb FLASH_CE  ; Disable SPI Flash
+
+CCU_ISR_Done:	
+	pop psw
+	pop acc
+	clr P2.6
+	reti
+;---------------------------------;
+; Initial configuration of ports. ;
+; After reset the default for the ;
+; pins is 'Open Drain'.  This     ;
+; routine changes them pins to    ;
+; Quasi-bidirectional like in the ;
+; original 8051.                  ;
+; Notice that P1.2 and P1.3 are   ;
+; always 'Open Drain'. If those   ;
+; pins are to be used as output   ;
+; they need a pull-up resistor.   ;
+;---------------------------------;
+Ports_Init:
+    ; Configure all the ports in bidirectional mode:
+    mov P0M1, #00H
+    mov P0M2, #00H
+    mov P1M1, #00H
+    mov P1M2, #00H ; WARNING: P1.2 and P1.3 need 1 kohm pull-up resistors if used as outputs!
+    mov P2M1, #00H
+    mov P2M2, #00H
+    mov P3M1, #00H
+    mov P3M2, #00H
+	ret
+
+;---------------------------------;
+; Sends a byte via serial port    ;
+;---------------------------------;
+putchar:
+	jbc	TI,putchar_L1
+	sjmp putchar
+putchar_L1:
+	mov	SBUF,a
+	ret
+
+;---------------------------------;
+; Receive a byte from serial port ;
+;---------------------------------;
+getchar:
+	jbc	RI,getchar_L1
+	sjmp getchar
+getchar_L1:
+	mov	a,SBUF
+	ret
+
+;---------------------------------;
+; Initialize the serial port      ;
+;---------------------------------;
+InitSerialPort:
+	mov	BRGCON,#0x00
+	mov	BRGR1,#high(BRVAL)
+	mov	BRGR0,#low(BRVAL)
+	mov	BRGCON,#0x03 ; Turn-on the baud rate generator
+	mov	SCON,#0x52 ; Serial port in mode 1, ren, txrdy, rxempty
+	; Make sure that TXD(P1.0) and RXD(P1.1) are configured as bidrectional I/O
+	anl	P1M1,#11111100B
+	anl	P1M2,#11111100B
+	ret
+
+;---------------------------------;
+; Initialize ADC1/DAC1 as DAC1.   ;
+; Warning, the ADC1/DAC1 can work ;
+; only as ADC or DAC, not both.   ;
+; The P89LPC9351 has two ADC/DAC  ;
+; interfaces.  One can be used as ;
+; ADC and the other can be used   ;
+; as DAC.  Also configures the    ;
+; pin associated with the DAC, in ;
+; this case P0.4 as 'Open Drain'. ;
+;---------------------------------;
+InitDAC:
+    ; Configure pin P0.4 (DAC1 output pin) as open drain
+	orl	P0M1,   #00010000B
+	orl	P0M2,   #00010000B
+    mov ADMODB, #00101000B ; Select main clock/2 for ADC/DAC.  Also enable DAC1 output (Table 25 of reference manual)
+	mov	ADCON1, #00000100B ; Enable the converter
+	mov AD1DAT3, #0x80     ; Start value is 3.3V/2 (zero reference for AC WAV file)
+	ret
+
+;---------------------------------;
+; Change the internal RC osc. clk ;
+; from 7.373MHz to 14.746MHz.     ;
+;---------------------------------;
+Double_Clk:
+    mov dptr, #CLKCON
+    movx a, @dptr
+    orl a, #00001000B ; double the clock speed to 14.746MHz
+    movx @dptr,a
+	ret
+
+;---------------------------------;
+; Initialize the SPI interface    ;
+; and the pins associated to SPI. ;
+;---------------------------------;
+Init_SPI:
+	; Configure MOSI (P2.2), CS* (P2.4), and SPICLK (P2.5) as push-pull outputs (see table 42, page 51)
+	anl P2M1, #low(not(00110100B))
+	orl P2M2, #00110100B
+	; Configure MISO (P2.3) as input (see table 42, page 51)
+	orl P2M1, #00001000B
+	anl P2M2, #low(not(00001000B)) 
+	; Configure SPI
+	mov SPCTL, #11010000B ; Ignore /SS, Enable SPI, DORD=0, Master=1, CPOL=0, CPHA=0, clk/4
+	ret
+
+;---------------------------------;
+; Sends AND receives a byte via   ;
+; SPI.                            ;
+;---------------------------------;
+Send_SPI:
+	mov SPDAT, a
+Send_SPI_1:
+	mov a, SPSTAT 
+	jnb acc.7, Send_SPI_1 ; Check SPI Transfer Completion Flag
+	mov SPSTAT, a ; Clear SPI Transfer Completion Flag
+	mov a, SPDAT ; return received byte via accumulator
+	ret
+
+;---------------------------------;
+; SPI flash 'write enable'        ;
+; instruction.                    ;
+;---------------------------------;
+Enable_Write:
+	clr FLASH_CE
+	mov a, #WRITE_ENABLE
+	lcall Send_SPI
+	setb FLASH_CE
+	ret
+
+;---------------------------------;
+; This function checks the 'write ;
+; in progress' bit of the SPI     ;
+; flash memory.                   ;
+;---------------------------------;
+Check_WIP:
+	clr FLASH_CE
+	mov a, #READ_STATUS
+	lcall Send_SPI
+	mov a, #0x55
+	lcall Send_SPI
+	setb FLASH_CE
+	jb acc.0, Check_WIP ;  Check the Write in Progress bit
+	ret
+	
 
 ;---------------------------------;
 ; ISR for timer 2.  Runs every ms ;
@@ -339,10 +561,23 @@ main:
 	; Initialization of hardware
 	mov SP, #0x7F
 	lcall Timer2_Init
+	lcall Ports_Init ; Default all pins as bidirectional I/O. See Table 42.
+    	lcall Double_Clk
+	lcall InitSerialPort
+	lcall InitDAC ; Call after 'Ports_Init
+	lcall CCU_Init
+	lcall Init_SPI
+	
+	clr TMOD20 ; Stop CCU timer
 	; Turn off all the LEDs
 	; mov LEDRA, #0 ; LEDRA is bit addressable
 	; mov LEDRB, #0 ; LEDRB is NOT bit addresable
 	setb EA   ; Enable Global interrupts
+    
+    
+    
+    
+    
     
     	; Initialize variables
 	clr abort_flag
@@ -363,7 +598,64 @@ main:
 	; After initialization the program stays in this 'forever' loop
 	lcall Default_state ;starts off in default display screen until button pressed
 
-loop:   
+
+forever_loop:
+	jb RI, serial_get
+	jb P3.0, forever_loop ; Check if push-button pressed
+	jnb P3.0, $ ; Wait for push-button release
+	; Play the whole memory
+	clr TMOD20 ; Stop the CCU from playing previous request
+	setb FLASH_CE
+	
+	clr FLASH_CE ; Enable SPI Flash
+	mov a, #READ_BYTES
+	lcall Send_SPI
+	; Set the initial position in memory where to start playing
+	mov a, #0
+	lcall Send_SPI
+	mov a, #0
+	lcall Send_SPI
+	mov a, #0xff
+	lcall Send_SPI
+	; How many bytes to play? All of them!  Asume 4Mbytes memory
+	mov w+2, #0x3f
+	mov w+1, #0xff
+	mov w+0, #0x00
+	
+	mov a, #0x00 ; Request first byte to send to DAC
+	lcall Send_SPI
+	
+	setb TMOD20 ; Start playback by enabling CCU timer
+	ljmp forever_loop
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+loop:  
+
+
         lcall check_abort
         jb abort_flag, abort
 	    lcall accumulate_loop_start
@@ -371,6 +663,9 @@ loop:
 	    mov a, oven_state
 		cjne a, #0, checkmain1
 		ljmp state1 ; jump to ramp to soak
+		
+		
+		
 checkmain1:	
         cjne a, #1, checkmain2
 		clr a
@@ -780,6 +1075,224 @@ Display_reflow_time:
 	Display_BCD(rtime)
     ret
     
+   
+;ADDING AUDIO
+
+
+serial_get:
+	lcall getchar ; Wait for data to arrive
+	cjne a, #'#', forever_loop ; Message format is #n[data] where 'n' is '0' to '9'
+	clr TMOD20 ; Stop the CCU from playing previous request
+	setb FLASH_CE ; Disable SPI Flash	
+	lcall getchar
+
+;---------------------------------------------------------	
+	cjne a, #'0' , Command_0_skip
+Command_0_start: ; Identify command
+	clr FLASH_CE ; Enable SPI Flash	
+	mov a, #READ_DEVICE_ID
+	lcall Send_SPI	
+	mov a, #0x55
+	lcall Send_SPI
+	lcall putchar
+	mov a, #0x55
+	lcall Send_SPI
+	lcall putchar
+	mov a, #0x55
+	lcall Send_SPI
+	lcall putchar
+	setb FLASH_CE ; Disable SPI Flash
+	ljmp forever_loop	
+Command_0_skip:
+
+;---------------------------------------------------------	
+	cjne a, #'1' , Command_1_skip 
+Command_1_start: ; Erase whole flash (takes a long time)
+	lcall Enable_Write
+	clr FLASH_CE
+	mov a, #ERASE_ALL
+	lcall Send_SPI
+	setb FLASH_CE
+	lcall Check_WIP
+	mov a, #01 ; Send 'I am done' reply
+	lcall putchar		
+	ljmp forever_loop	
+Command_1_skip:
+
+;---------------------------------------------------------	
+	cjne a, #'2' , Command_2_skip 
+Command_2_start: ; Load flash page (256 bytes or less)
+	lcall Enable_Write
+	clr FLASH_CE
+	mov a, #WRITE_BYTES
+	lcall Send_SPI
+	lcall getchar ; Address bits 16 to 23
+	lcall Send_SPI
+	lcall getchar ; Address bits 8 to 15
+	lcall Send_SPI
+	lcall getchar ; Address bits 0 to 7
+	lcall Send_SPI
+	lcall getchar ; Number of bytes to write (0 means 256 bytes)
+	mov r0, a
+Command_2_loop:
+	lcall getchar
+	lcall Send_SPI
+	djnz r0, Command_2_loop
+	setb FLASH_CE
+	lcall Check_WIP
+	mov a, #01 ; Send 'I am done' reply
+	lcall putchar		
+	ljmp forever_loop	
+Command_2_skip:
+
+;---------------------------------------------------------	
+	cjne a, #'3' , Command_3_skip 
+Command_3_start: ; Read flash bytes (256 bytes or less)
+	clr FLASH_CE
+	mov a, #READ_BYTES
+	lcall Send_SPI
+	lcall getchar ; Address bits 16 to 23
+	lcall Send_SPI
+	lcall getchar ; Address bits 8 to 15
+	lcall Send_SPI
+	lcall getchar ; Address bits 0 to 7
+	lcall Send_SPI
+	lcall getchar ; Number of bytes to read and send back (0 means 256 bytes)
+	mov r0, a
+
+Command_3_loop:
+	mov a, #0x55
+	lcall Send_SPI
+	lcall putchar
+	djnz r0, Command_3_loop
+	setb FLASH_CE	
+	ljmp forever_loop	
+Command_3_skip:
+
+;---------------------------------------------------------	
+	cjne a, #'4' , Command_4_skip 
+Command_4_start: ; Playback a portion of the stored wav file
+	clr TMOD20 ; Stop the CCU from playing previous request
+	setb FLASH_CE
+	
+	clr FLASH_CE ; Enable SPI Flash
+	mov a, #READ_BYTES
+	lcall Send_SPI
+	; Get the initial position in memory where to start playing
+	lcall getchar
+	lcall Send_SPI
+	lcall getchar
+	lcall Send_SPI
+	lcall getchar
+	lcall Send_SPI
+	; Get how many bytes to play
+	lcall getchar
+	mov w+2, a
+	lcall getchar
+	mov w+1, a
+	lcall getchar
+	mov w+0, a
+	
+	mov a, #0x00 ; Request first byte to send to DAC
+	lcall Send_SPI
+	
+	setb TMOD20 ; Start playback by enabling CCU timer
+	ljmp forever_loop	
+Command_4_skip:
+
+;---------------------------------------------------------	
+	cjne a, #'5' , Command_5_skip 
+Command_5_start: ; Calculate and send CRC-16 of ISP flash memory from zero to the 24-bit passed value.
+	; Get how many bytes to use to calculate the CRC.  Store in [r5,r4,r3]
+	lcall getchar
+	mov r5, a
+	lcall getchar
+	mov r4, a
+	lcall getchar
+	mov r3, a
+	
+	; Since we are using the 'djnz' instruction to check, we need to add one to each byte of the counter.
+	; A side effect is that the down counter becomes efectively a 23-bit counter, but that is ok
+	; because the max size of the 25Q32 SPI flash memory is 400000H.
+	inc r3
+	inc r4
+	inc r5
+	
+	; Initial CRC must be zero.  Using [r7,r6] to store CRC.
+	clr a
+	mov r7, a
+	mov r6, a
+
+	clr FLASH_CE
+	mov a, #READ_BYTES
+	lcall Send_SPI
+	clr a ; Address bits 16 to 23
+	lcall Send_SPI
+	clr a ; Address bits 8 to 15
+	lcall Send_SPI
+	clr a ; Address bits 0 to 7
+	lcall Send_SPI
+	mov SPDAT, a ; Request first byte from SPI flash
+	sjmp Command_5_loop_start
+
+Command_5_loop:
+	mov a, SPSTAT 
+	jnb acc.7, Command_5_loop 	; Check SPI Transfer Completion Flag
+	mov SPSTAT, a				; Clear SPI Transfer Completion Flag	
+	mov a, SPDAT				; Save received SPI byte to accumulator
+	mov SPDAT, a				; Request next byte from SPI flash; while it arrives we calculate the CRC:
+	crc16()						; Calculate CRC with new byte
+Command_5_loop_start:
+	; Drecrement counter:
+	djnz r3, Command_5_loop
+	djnz r4, Command_5_loop
+	djnz r5, Command_5_loop
+Command_5_loop2:	
+	mov a, SPSTAT 
+	jnb acc.7, Command_5_loop2 	; Check SPI Transfer Completion Flag
+	mov SPSTAT, a				; Clear SPI Transfer Completion Flag	
+	setb FLASH_CE 				; Done reading from SPI flash
+	; Computation of CRC is complete.  Send 16-bit result using the serial port
+	mov a, r7
+	lcall putchar
+	mov a, r6
+	lcall putchar
+
+	ljmp forever_loop	
+Command_5_skip:
+
+;---------------------------------------------------------	
+	cjne a, #'6' , Command_6_skip 
+Command_6_start: ; Fill flash page (256 bytes)
+	lcall Enable_Write
+	clr FLASH_CE
+	mov a, #WRITE_BYTES
+	lcall Send_SPI
+	lcall getchar ; Address bits 16 to 23
+	lcall Send_SPI
+	lcall getchar ; Address bits 8 to 15
+	lcall Send_SPI
+	lcall getchar ; Address bits 0 to 7
+	lcall Send_SPI
+	lcall getchar ; Byte to write
+	mov r1, a
+	mov r0, #0 ; 256 bytes
+Command_6_loop:
+	mov a, r1
+	lcall Send_SPI
+	djnz r0, Command_6_loop
+	setb FLASH_CE
+	lcall Check_WIP
+	mov a, #01 ; Send 'I am done' reply
+	lcall putchar		
+	ljmp forever_loop	
+Command_6_skip:
+
+	ljmp forever_loop
+   
+   
       
+     
+end
       
 
