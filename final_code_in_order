@@ -155,6 +155,12 @@ DB 'Aborting...', 0
 HexAscii: 
 db '0123456789ABCDEF'
 
+defaultstate:
+DB 'Press button to' , 0 
+
+defaulstate2:
+DB 'adjust or start' , 0
+
 ;---------------------------------;
 ; Initializing Timer0             ;
 ;---------------------------------;
@@ -462,7 +468,53 @@ Hex_to_bcd_8bit:
 	orl a, b
 	mov R0, a
 	ret
+
+
+SendTemp:
+	mov dptr, #HexAscii 
 	
+	mov a, bcd+1
+	swap a
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+	mov a, bcd+1
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+
+	mov a, #'.'
+	lcall putchar
+
+	mov a, bcd+0
+	swap a
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+	mov a, bcd+0
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+	
+	mov a, #'\r'
+	lcall putchar
+	mov a, #'\n'
+	lcall putchar	
+	ret
+	
+SendString:
+    clr a
+    movc a, @a+dptr
+    jz SendString_L1
+    lcall putchar
+    inc dptr
+    sjmp SendString  
+SendString_L1:
+	ret
+
+
+
+
 
 ;Function to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)
 Temp_Set:
@@ -556,8 +608,16 @@ abort_return:
 abort:
     Set_Cursor(1,1)
 	Send_Constant_String(#displayabort)
+    Set_Cursor(2,1)
+    Send_Constant_String(#defaulstate2)
     clr POWER_OUT
     
+    jb button_reset, abort; if the 'button_updown' button is not pressed skip
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb button_state, abort  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
+	jnb button_state, $
+    
+    ljmp Default_state
 
 
 accumulate_loop_start:
@@ -601,6 +661,9 @@ accumulate_loop:
         
 Default_state:
 	;set power to 0 (turn off oven)
+    clr POWER_OUT
+    Set_Cursor(1,1)
+    Send_Constant_String(#defaultstate)
     jb button_state, Default_state; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb button_state, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
@@ -813,7 +876,7 @@ state1: 	;Ramp to Soak
 	;subb a, ctemp
 	;jc state1_2
 	mov ttemp, stemp
-	lcall Temp_check
+	lcall Temp_Set
 	mov a, stemp+1
 	cjne a, ctemp+1, state1_2
 	mov a, stemp
@@ -848,7 +911,7 @@ state3:		;Ramp to Peak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate3)
 	mov ttemp, rtemp
-	lcall Temp_check
+	lcall Temp_Set
 	mov a, rtemp+1
 	cjne a, ctemp+1, state3_2
 	mov a, rtemp
@@ -882,7 +945,7 @@ state5:		;Cooling
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate5)
 	mov ttemp, #0x40
-	lcall Temp_check 	;turn oven off
+	lcall Temp_Set 	;turn oven off
 	mov a, #0x00
 	cjne a, ctemp+1, state5_2
 	mov a, #0x40
@@ -942,11 +1005,11 @@ Display_reflow_temperature:
 	ret
 
 Display_reflow_time:
-    	Set_Cursor(1,1)
+    Set_Cursor(1,1)
 	Send_Constant_String(#setreflowtime) 
 	Set_Cursor(2,1)   
 	Display_BCD(rtime)
-    	ret
+    ret
 
 end     
       
