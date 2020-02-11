@@ -55,17 +55,17 @@ READ_DEVICE_ID   EQU 0x9f  ; Address:0 Dummy:2 Num:1 to infinite
 ;-------------------------------------------;
 
 dseg at 0x30
-Count1ms: ds 2; Used to determine when half a second has passed
-w:		ds 3; 24-bit play counter. Decremented in CCU ISR
-ctemp: ds 2   ; current temperature
-ctime: ds 4   ; current time
+Count1ms:   ds 2; Used to determine when half a second has passed
+w:		    ds 3; 24-bit play counter. Decremented in CCU ISR
+ctemp:      ds 2   ; current temperature
+ctime:      ds 4   ; current time
 
-rtemp:			 ds 2   ; reflow  temperature
-stemp:			 ds 2   ; soak temperature
-rtime:			 ds 2   ; reflow time
-stime:		   	 ds 2   ; soak time
-tt:              ds 1 ; temporary variable to hold stime 
-ttemp: 			ds 2 ; temporary temperature
+rtemp:		ds 2   ; reflow  temperature
+stemp:		ds 2   ; soak temperature
+rtime:		ds 2   ; reflow time
+stime:		ds 2   ; soak time
+tt:         ds 1 ; temporary variable to hold stime 
+ttemp: 	    ds 2 ; temporary temperature
 
 adjust_state: ds 1
 oven_state: ds 1
@@ -73,6 +73,7 @@ oven_state: ds 1
 x: ds 4 ;for use in math32
 y: ds 4
 bcd: ds 5
+
 
 ;-------------------------------------------;
 ;                  Flags                    ;
@@ -89,32 +90,33 @@ abort_flag: 		    dbit 1
 mf:                     dbit 1
 power_flag:             dbit 1 
 
+
 ;-------------------------------------------;
 ;         Pins and Constant Strings         ;
 ;-------------------------------------------;
 cseg
-LCD_RS equ P0.7
-LCD_RW equ P3.0
-LCD_E  equ P3.1
-LCD_D4 equ P2.0
-LCD_D5 equ P2.1
-LCD_D6 equ P2.2
-LCD_D7 equ P2.3
+LCD_RS equ P0.5
+LCD_RW equ P0.6
+LCD_E  equ P0.7
+LCD_D4 equ P1.2
+LCD_D5 equ P1.3
+LCD_D6 equ P1.4
+LCD_D7 equ P1.6
 
 ;---------------------------------;
 ; Button/Switch Pins		  ;
 ;---------------------------------;
-sw_start_stop equ P0.0
-sw_updown     equ P0.3
-button_updown equ P0.4
-button_state  equ P0.5
-button_reset  equ P2.6
+sw_start_stop equ P3.1
+sw_updown     equ P2.1
+button_updown equ P2.6
+button_state  equ P3.0
+button_reset  equ P0.3
 
 ;---------------------------------;
 ; Temperature and Power		  ;
 ;---------------------------------;
-TEMP_IN 	equ P2.4
-POWER_OUT 	equ P2.7
+TEMP_IN 	equ P1.7
+POWER_OUT 	equ P0.0
 
 ;---------------------------------;
 ; Strings		  ;
@@ -171,7 +173,7 @@ Timer0_Init:
 	mov TL0, #low(TIMER0_RELOAD)
 	; Enable the timer and interrupts
     setb ET0  ; Enable timer 0 interrupt
-    clr TR0  ; Start timer 0
+    setb TR0  ; Start timer 0
 	ret
 
 ;---------------------------------;
@@ -190,6 +192,8 @@ Timer0_ISR:
 	mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
 	jnz Inc_Done
 	inc Count1ms+1
+	
+	
 
 Inc_Done:
 	; Check if full second has passed
@@ -325,6 +329,7 @@ L1_1:	djnz R0, L1_1 ; 2 machine cycles-> 2*0.27126us*184=100us
 	djnz R1, L2_1 ; 100us*250=0.025s
 	djnz R2, L3_1 ; 0.025s*40=1s
 	ret
+
 
 ;---------------------------------;
 ; Initialize the serial port      ;
@@ -464,6 +469,7 @@ Hex_to_bcd_8bit:
 	mov R0, a
 	ret
 
+
 SendTemp:
 	mov dptr, #HexAscii 
 	
@@ -506,7 +512,11 @@ SendString:
 SendString_L1:
 	ret
 
-;Function to automatically adjust oven power depending on current and desired temperature (input a decimal in hex format)
+
+
+
+
+;Function to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)
 Temp_Set:
 	push acc
 	mov a, ttemp+1
@@ -534,13 +544,19 @@ Power_on:
 main:
 	; Initialization of hardware
 	mov SP, #0x7F
-	lcall Timer0_Init
+    lcall Ports_Init
+    lcall LCD_4BIT 
+    lcall InitADC
+    lcall Init_SPI
+    lcall CCU_Init
+    lcall Timer0_Init
 	; Turn off all the LEDs
 	; mov LEDRA, #0 ; LEDRA is bit addressable
 	; mov LEDRB, #0 ; LEDRB is NOT bit addresable
 	setb EA   ; Enable Global interrupts
     ; Initialize variables
 	clr abort_flag
+    clr mf
 	mov adjust_state, #0
 	mov oven_state, #0
 	mov ctemp, #0
@@ -555,22 +571,26 @@ main:
 	mov rtime, #0x45   ; reflow time   
 	mov rtime+1, #0x00
 	mov tt, #0x00
+    ljmp Default_state
 	; After initialization the program stays in this 'forever' loop
-	lcall Default_state ;starts off in default display screen until button pressed
+	   ;starts off in default display screen until button pressed
+
 
 loop:   
+        
         lcall check_abort
         jb abort_flag, abort
-	jnb reset_button, abort
-	lcall accumulate_loop_start
-	clr a 
-	mov a, oven_state
-	cjne a, #0, checkmain1
-	ljmp state1 ; jump to ramp to soak
+	    lcall accumulate_loop_start
+        lcall Display_oven_temp
+        lcall Display_oven_time
+		clr a 
+	    mov a, oven_state
+		cjne a, #0, checkmain1
+		ljmp state1 ; jump to ramp to soak
 checkmain1:	
         cjne a, #1, checkmain2
-	clr a
-	ljmp state2 ; jump to soak
+		clr a
+		ljmp state2 ; jump to soak
 		
 checkmain2:	
         cjne a, #2, checkmain3
@@ -597,17 +617,19 @@ check_abort:
 abort_return:
         ret       
 abort:
-    	Set_Cursor(1,1)
+    Set_Cursor(1,1)
 	Send_Constant_String(#displayabort)
-    	Set_Cursor(2,1)
-    	Send_Constant_String(#defaulstate2)
-    	clr POWER_OUT
+    Set_Cursor(2,1)
+    Send_Constant_String(#defaulstate2)
+    clr POWER_OUT
     
-    	jb button_reset, abort; if the 'button_updown' button is not pressed skip
+    jb button_reset, abort; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb button_reset, abort  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
-	jnb button_reset, $
-    	ljmp main
+	jb button_state, abort  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
+	jnb button_state, $
+    
+    ljmp main 
+
 
 accumulate_loop_start:
     ; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
@@ -650,25 +672,29 @@ accumulate_loop:
         
 Default_state:
 	;set power to 0 (turn off oven)
-    	clr POWER_OUT
-    	Set_Cursor(1,1)
-    	Send_Constant_String(#defaultstate)
-    	jb button_state, Default_state; if the 'button_updown' button is not pressed skip
+    clr POWER_OUT
+default_display:
+    Set_Cursor(1,1)
+    Send_Constant_String(#defaultstate)
+    Set_Cursor(2,1)
+    Send_Constant_String(#defaulstate2)
+    
+    jb button_state, default_display  ; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb button_state, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
+	jb button_state, default_display  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_state, $
-	jb sw_start_stop, param_adjust ;if switch down, adjust parameters
+	
+    jb sw_start_stop, param_adjust ;if switch down, adjust parameters
 	setb TR0; Start the timer 
-    	ljmp loop
+    ljmp loop
 
 param_adjust:
-    	jnb    sw_start_stop, default_state
-	jnb 	button_reset, abort
-	mov a, adjust_state
+    jnb    sw_start_stop, default_state
+	mov     a, adjust_state
 	cjne 	a, #0, check1 ;jump if bit set (switch down)
 	ljmp 	soak_temp
 check1:
-    	mov a, adjust_state
+    mov a, adjust_state
 	cjne a, #1, check2
 	clr a 
 	ljmp soak_time
@@ -685,12 +711,17 @@ check3:
 ;in each of these, change display and read button_updown to adjust
 ;also read button_state to inc adjust_state
 soak_temp:
-    lcall Display_soak_temperature
-    jb button_updown, param_adjust ;check if button_down is pressed. 
+    WriteCommand(#0x01)
+    Set_Cursor(1,1)
+	Send_Constant_String(#setsoaktemperature)
+	Set_Cursor(2,1)
+	Display_BCD(stemp)
+	ljmp soak_temp
+    
+	jb button_updown, param_adjust  ;check if button_down is pressed. 
 	Wait_Milli_Seconds(#50)	
 	jb button_updown, param_adjust
 	jnb button_updown, $
-   
 
     jb sw_updown, dec_soak_temp
 	
@@ -729,7 +760,7 @@ soak_temp_done:
 
 soak_time:
     lcall Display_soak_time
-    jb button_updown, param_adjust ; check if button_down is pressed. 
+    jb button_updown, to_param_adjust ; check if button_down is pressed. 
     Wait_Milli_Seconds(#50)	
     jb button_updown, to_param_adjust
     jnb button_updown, $
@@ -871,12 +902,12 @@ state1: 	;Ramp to Soak
 	cjne a, ctemp+1, state1_2
 	mov a, stemp
 	cjne a, ctemp, state1_2
-    	ljmp loop 
+    ljmp loop 
 state1_2:
 	jc done_ramp_to_soak
-    	ljmp loop
+    ljmp loop
 done_ramp_to_soak:
-    	inc oven_state
+    inc oven_state
 	mov tt, stime
 	ljmp loop
         
@@ -884,7 +915,8 @@ done_ramp_to_soak:
 state2: 	;Soak
 	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate2)
-	dec tt
+	lcall Temp_Set
+    dec tt
 	mov a, tt 
 	cjne a, #0, to_loop
     ljmp state2_done
@@ -974,44 +1006,39 @@ Display_oven_temp:
 	ret
 
 Display_soak_time:
-    	Set_Cursor(1,1)
+    WriteCommand(#0x01)
+    Wait_Milli_Seconds(#10)
+    Set_Cursor(1,1)
 	Send_Constant_String(#setsoaktime)
 	Set_Cursor(2,1)
 	Display_BCD(stime)
-	ret 
+	ljmp soak_time
 
 Display_soak_temperature:
-    	Set_Cursor(1,1)
-	Send_Constant_String(#setsoaktemperature)
-	Set_Cursor(2,1)
-	Display_BCD(stemp)
-	ret
+    ;WriteCommand(#0x01)
+   ; Set_Cursor(1,1)
+	;Send_Constant_String(#setsoaktemperature)
+	;Set_Cursor(2,1)
+	;Display_BCD(stemp)
+;	ljmp soak_temp
 
 Display_reflow_temperature:
-    	Set_Cursor(1,1)
+    WriteCommand(#0x01)
+    Set_Cursor(1,1)
 	Send_Constant_String(#setreflowtemperature)    
 	Set_Cursor(2,1)
 	Display_BCD(rtemp)
-	ret
+	ljmp reflow_temp
 
 Display_reflow_time:
+    WriteCommand(#0x01)
     Set_Cursor(1,1)
 	Send_Constant_String(#setreflowtime) 
 	Set_Cursor(2,1)   
 	Display_BCD(rtime)
-    ret
+    ljmp reflow_time
 
 end     
       
-
-
-
-
-
-
-
-
-
-
 
 
