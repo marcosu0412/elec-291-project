@@ -134,7 +134,7 @@ setsoaktemperature:
 DB 'SOAK TEMP', 0
 
 setreflowtemperature:
-DB 'Reflow Temp', 0
+DB 'REFLOW TEMP', 0
 
 setreflowtime:
 DB 'Reflow Time', 0
@@ -788,7 +788,10 @@ check_button_state_4:
     jnb button_updown, $
     jb sw_updown, dec_reflow_time
     
-	cpl reflow_time_flag
+	setb reflow_time_flag
+	setb reflow_temp_flag
+	setb soak_time_flag
+	setb soak_temp_flag
 	ljmp check_flag
 
 check_updown_button_4:  
