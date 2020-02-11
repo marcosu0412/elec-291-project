@@ -585,7 +585,6 @@ main:
 	   ;starts off in default display screen until button pressed
     
 Default_state:
-    Wait_Milli_Seconds(#50)
     Set_Cursor(1,1)
     Send_Constant_String(#defaultstate)
     Set_Cursor(2,1)
@@ -596,9 +595,10 @@ Default_state:
 	jb button_state, loop 
 	jnb button_state, $
     
-    jb sw_start_stop, soak_temp
+    jb sw_start_stop, check_flag
 
 check_flag:
+	WriteCommand(#0x01)
     jb soak_temp_flag, soak_temp
     jb soak_time_flag, to_soak_time
     jb reflow_temp_flag, to_reflow_temp
@@ -618,7 +618,7 @@ loop:
 ;in each of these, change display and read button_updown to adjust
 ;also read button_state to inc adjust_state
 soak_temp:
-	WriteCommand(#0x01)
+	
 	Wait_Milli_Seconds(#90)
     Wait_Milli_Seconds(#90)
     Set_Cursor(1,1)
@@ -671,15 +671,8 @@ dec_soak_temp_1:
     mov stemp, a
     ljmp check_updown_button
 
-;to_param_adjust:
-    ;ljmp param_adjust
-
 
 soak_time:
-    lcall Wait1S
-    WriteCommand(#0x01)
-    lcall Wait1S
-    Wait_Milli_Seconds(#90)
     Set_Cursor(1,1)
 	Send_Constant_String(#setsoaktime)
 	Set_Cursor(2,1)
@@ -709,9 +702,9 @@ inc_soak_time:
     cjne a, #0x91, inc_soak_time_1
     mov a, #0x60
     mov stime, a
-    ;ljmp param_adjust
+    ljmp check_button_state_2
 inc_soak_time_1:
-    ;ljmp param_adjust
+   ljmp check_button_state_2
     
 dec_soak_time:
     mov a, stime
@@ -727,9 +720,6 @@ dec_soak_time_1:
     
 
 reflow_temp:
-    WriteCommand(#0x01)
-    Wait_Milli_Seconds(#90)
-    Wait_Milli_Seconds(#90)
     Set_Cursor(1,1)
 	Send_Constant_String(#setreflowtemperature)    
 	Set_Cursor(2,1)
@@ -737,15 +727,24 @@ reflow_temp:
     Set_Cursor(2,3)
     Display_BCD(rtemp)
 	
-
+check_button_state_3:
     jb button_updown, reflow_temp ; check if button_down is pressed. 
     Wait_Milli_Seconds(#50)	
     jb button_updown, reflow_temp
     jnb button_updown, $
     jb sw_updown, dec_reflow_temp
 
-;to_param_adjust_1:
-    ;ljmp param_adjust
+    cpl reflow_temp_flag
+	ljmp check_flag
+
+check_updown_button_3:  
+    jb button_updown, reflow_temp ; check if button_down is pressed. 
+    Wait_Milli_Seconds(#50)	
+    jb button_updown, reflow_temp
+    jnb button_updown, $
+    
+	jb sw_updown, dec_reflow_temp 
+
 
 inc_reflow_temp:
     mov a, rtemp
@@ -754,9 +753,9 @@ inc_reflow_temp:
     cjne a, #0x31, inc_reflow_temp_1
     mov a, #0x19
     mov rtemp, a
-    ljmp reflow_temp_done
+    ljmp check_updown_button_3
 inc_reflow_temp_1:
-    ljmp reflow_temp_done
+    ljmp check_updown_button_3
     
 dec_reflow_temp:
     mov a, rtemp
@@ -765,11 +764,10 @@ dec_reflow_temp:
     cjne a, #0x18, dec_reflow_temp_1
     mov a, #0x30
     mov rtemp, a
-    ljmp reflow_temp_done
+    ljmp check_updown_button_3
 dec_reflow_temp_1:
-    ljmp reflow_temp_done 
-    
-reflow_temp_done:
+    ljmp check_updown_button_3
+;reflow_temp_done:
     ;jb button_state, reflow_temp
    ; Wait_Milli_Seconds(#50)	
    ; jb button_state, reflow_temp
@@ -778,21 +776,28 @@ reflow_temp_done:
    ; ljmp param_adjust
 
 reflow_time:
-    WriteCommand(#0x01)
     Set_Cursor(1,1)
 	Send_Constant_String(#setreflowtime) 
 	Set_Cursor(2,1)   
 	Display_BCD(rtime)
 
-
-    jb button_updown, to_param_adjust_2
+check_button_state_4:
+    jb button_updown, reflow_time
     Wait_Milli_Seconds(#50)
-    jb button_updown, to_param_adjust_2
+    jb button_updown, reflow_time
     jnb button_updown, $
     jb sw_updown, dec_reflow_time
+    
+	cpl reflow_time_flag
+	ljmp check_flag
 
-to_param_adjust_2:
-   ; ljmp param_adjust
+check_updown_button_4:  
+    jb button_updown, reflow_time ; check if button_down is pressed. 
+    Wait_Milli_Seconds(#50)	
+    jb button_updown, reflow_time
+    jnb button_updown, $
+    
+	jb sw_updown, dec_reflow_time
 	
 inc_reflow_time:
 	mov a, rtime
@@ -801,9 +806,9 @@ inc_reflow_time:
 	cjne a, #0x60, inc_reflow_time_1
 	mov a, #0x30
 	mov rtime, a
-	ljmp reflow_time_done
+	ljmp check_updown_button_4
 inc_reflow_time_1:
-	ljmp reflow_time_done
+	ljmp check_updown_button_4
 	
 dec_reflow_time:
 	mov a, rtime
@@ -812,18 +817,10 @@ dec_reflow_time:
 	cjne a, #0x30, dec_reflow_time_1
 	mov a, #0x60
 	mov rtemp, a
-	ljmp reflow_time_done
+	ljmp check_updown_button_4
 dec_reflow_time_1:
-	ljmp reflow_time_done
+	ljmp check_updown_button_4
 	
-reflow_time_done:
-	jb button_state, reflow_time
-	Wait_Milli_seconds(#50)
-	jb button_state, reflow_time
-	jnb button_state, $
-	mov adjust_state, #0
-	;ljmp param_adjust
-
 
 
 
