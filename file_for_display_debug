@@ -8,6 +8,11 @@ $LIST
 org 0x0000
     ljmp main
 
+; Timer/Counter 0 overflow interrupt vector
+org 0x000B
+	ljmp Timer0_ISR
+
+
 ; Timer/Counter 2 overflow interrupt vector
 org 0x005B
 	ljmp CCU_ISR	
@@ -674,7 +679,7 @@ Default_state:
 	;set power to 0 (turn off oven)
     clr POWER_OUT
 default_display:
-    Wait_Milli_Seconds(#100)
+    Wait_Milli_Seconds(#50)
     Set_Cursor(1,1)
     Send_Constant_String(#defaultstate)
     Set_Cursor(2,1)
@@ -696,23 +701,23 @@ param_adjust:
 	ljmp 	soak_temp
 check1:
     mov a, adjust_state
-	cjne a, #1, check2
+	cjne a, #0x01, check2
 	ljmp soak_time
 check2:
     mov a, adjust_state
-	cjne a, #2, check3
+	cjne a, #0x02, check3
 	ljmp reflow_temp
 
 check3:
   	ljmp reflow_time
-    ret 
+    
 
 
 ;in each of these, change display and read button_updown to adjust
 ;also read button_state to inc adjust_state
 soak_temp:
 	WriteCommand(#0x01)
-	Wait_Milli_Seconds(#50)
+	Wait_Milli_Seconds(#20)
     Set_Cursor(1,1)
 	Send_Constant_String(#setsoaktemperature)
 	Set_Cursor(2,1)
@@ -726,9 +731,8 @@ check_button_state:
 	jb button_state, check_updown_button 
 	jnb button_state, $
     
-	mov a,adjust_state
-    add a, #0x01
-	ljmp param_adjust
+	mov adjust_state, #0x01
+	ljmp check1
 
     
 check_updown_button:	
@@ -739,8 +743,6 @@ check_updown_button:
    
     jb sw_updown, dec_soak_temp
 
-
-
 inc_soak_temp:
    	mov a, stemp
    	add a, #0x01
@@ -748,10 +750,11 @@ inc_soak_temp:
     cjne a, #0x71, inc_soak_temp_1
     mov a, #0x30
     mov stemp, a
-    ljmp soak_temp
+    ljmp check_updown_button
 
 inc_soak_temp_1:
-    ljmp soak_temp
+    mov stemp, a 
+    ljmp check_updown_button
 
 dec_soak_temp:
     mov a, stemp
@@ -760,9 +763,11 @@ dec_soak_temp:
     cjne a, #0x29,dec_soak_temp_1
     mov a, #0x70
     mov stemp, a
-   	ljmp soak_temp
+   	ljmp check_updown_button
 dec_soak_temp_1:
-    ljmp soak_temp
+    mov stemp, a
+    ljmp check_updown_button
+
 to_param_adjust:
     ljmp param_adjust
 
