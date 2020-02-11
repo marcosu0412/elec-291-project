@@ -902,6 +902,7 @@ state1: 	;Ramp to Soak
 	cjne a, ctemp+1, state1_2
 	mov a, stemp
 	cjne a, ctemp, state1_2
+	sjmp $
     ljmp loop 
 state1_2:
 	jc done_ramp_to_soak
