@@ -123,10 +123,10 @@ POWER_OUT 	equ P0.0
 ;---------------------------------;
 
 setsoaktime:
-DB 'Soak Time', 0
+DB 'SOAK TIME', 0
 
 setsoaktemperature:
-DB 'Soak Temp', 0
+DB 'SOAK TEMP', 0
 
 setreflowtemperature:
 DB 'Reflow Temp', 0
@@ -674,6 +674,7 @@ Default_state:
 	;set power to 0 (turn off oven)
     clr POWER_OUT
 default_display:
+    Wait_Milli_Seconds(#100)
     Set_Cursor(1,1)
     Send_Constant_String(#defaultstate)
     Set_Cursor(2,1)
@@ -689,20 +690,19 @@ default_display:
     ljmp loop
 
 param_adjust:
-    jnb    sw_start_stop, default_state
+    jnb     sw_start_stop, default_state
 	mov     a, adjust_state
 	cjne 	a, #0, check1 ;jump if bit set (switch down)
 	ljmp 	soak_temp
 check1:
     mov a, adjust_state
 	cjne a, #1, check2
-	clr a 
 	ljmp soak_time
 check2:
+    mov a, adjust_state
 	cjne a, #2, check3
-	clr a 
 	ljmp reflow_temp
-    
+
 check3:
   	ljmp reflow_time
     ret 
@@ -711,31 +711,48 @@ check3:
 ;in each of these, change display and read button_updown to adjust
 ;also read button_state to inc adjust_state
 soak_temp:
-    WriteCommand(#0x01)
+	WriteCommand(#0x01)
+	Wait_Milli_Seconds(#50)
     Set_Cursor(1,1)
 	Send_Constant_String(#setsoaktemperature)
 	Set_Cursor(2,1)
+	Display_BCD(stemp+1)
+	Set_Cursor(2,3)
 	Display_BCD(stemp)
-	ljmp soak_temp
-    
-	jb button_updown, param_adjust  ;check if button_down is pressed. 
-	Wait_Milli_Seconds(#50)	
-	jb button_updown, param_adjust
-	jnb button_updown, $
 
+check_button_state:
+	jb button_state, check_updown_button
+	Wait_Milli_Seconds(#50)	
+	jb button_state, check_updown_button 
+	jnb button_state, $
+    
+	mov a,adjust_state
+    add a, #0x01
+	ljmp param_adjust
+
+    
+check_updown_button:	
+    jb button_updown, to_param_adjust  ;check if button_down is pressed. 
+	Wait_Milli_Seconds(#50)	
+	jb button_updown, to_param_adjust
+	jnb button_updown, $
+   
     jb sw_updown, dec_soak_temp
-	
+
+
+
 inc_soak_temp:
-   	mov a, stemp+0
+   	mov a, stemp
    	add a, #0x01
     da a
     cjne a, #0x71, inc_soak_temp_1
     mov a, #0x30
     mov stemp, a
-    ljmp soak_temp_done
+    ljmp soak_temp
+
 inc_soak_temp_1:
-    ljmp soak_temp_done
-    
+    ljmp soak_temp
+
 dec_soak_temp:
     mov a, stemp
     subb a, #0x01
@@ -743,31 +760,37 @@ dec_soak_temp:
     cjne a, #0x29,dec_soak_temp_1
     mov a, #0x70
     mov stemp, a
-   	ljmp soak_temp_done
+   	ljmp soak_temp
 dec_soak_temp_1:
-    ljmp soak_temp_done
-    
-soak_temp_done:    
-	jb button_state, soak_temp
-	Wait_Milli_Seconds(#50)	
-	jb button_state, soak_temp 
-	jnb button_state, $
-    
-	inc adjust_state
-	ljmp param_adjust
-     
+    ljmp soak_temp
+to_param_adjust:
+    ljmp param_adjust
 
 
 soak_time:
-    lcall Display_soak_time
-    jb button_updown, to_param_adjust ; check if button_down is pressed. 
+    WriteCommand(#0x01)
+    Wait_Milli_Seconds(#50)
+    Set_Cursor(1,1)
+	Send_Constant_String(#setsoaktime)
+	Set_Cursor(2,1)
+	Display_BCD(stime)
+	
+check_button_state_2:
+    jb button_state, check_updown_button_2
     Wait_Milli_Seconds(#50)	
-    jb button_updown, to_param_adjust
-    jnb button_updown, $
-    jb sw_updown, dec_soak_time
-
-to_param_adjust:
+    jb button_state, check_updown_button_2
+    jnb button_state, $
+    
+    inc adjust_state
     ljmp param_adjust
+    
+check_updown_button_2:  
+    jb button_updown, soak_time ; check if button_down is pressed. 
+    Wait_Milli_Seconds(#50)	
+    jb button_updown, soak_time
+    jnb button_updown, $
+    
+	jb sw_updown, dec_soak_time
 
 inc_soak_time:
     mov a, stime
@@ -776,9 +799,9 @@ inc_soak_time:
     cjne a, #0x91, inc_soak_time_1
     mov a, #0x60
     mov stime, a
-    ljmp soak_time_done
+    ljmp param_adjust
 inc_soak_time_1:
-    ljmp soak_time_done
+    ljmp param_adjust
     
 dec_soak_time:
     mov a, stime
@@ -787,18 +810,10 @@ dec_soak_time:
     cjne a, #0x59,dec_soak_time_1
     mov a, #0x90
     mov stime, a
-    ljmp soak_temp_done
-dec_soak_time_1:
-    ljmp soak_time_done 
-    
-soak_time_done:
-    jb button_state, soak_time
-    Wait_Milli_Seconds(#50)	
-    jb button_state, soak_time
-    jnb button_state, $
-    
-    inc adjust_state
     ljmp param_adjust
+dec_soak_time_1:
+    ljmp param_adjust
+    
     
 
 reflow_temp:
@@ -1005,16 +1020,16 @@ Display_oven_temp:
 	Display_BCD(#'C')
 	ret
 
-Display_soak_time:
-    WriteCommand(#0x01)
-    Wait_Milli_Seconds(#10)
-    Set_Cursor(1,1)
-	Send_Constant_String(#setsoaktime)
-	Set_Cursor(2,1)
-	Display_BCD(stime)
-	ljmp soak_time
+;Display_soak_time:
+   ; WriteCommand(#0x01)
+    ;Wait_Milli_Seconds(#10)
+   ; Set_Cursor(1,1)
+	;Send_Constant_String(#setsoaktime)
+	;Set_Cursor(2,1)
+	;Display_BCD(stime)
+	;ljmp soak_time
 
-Display_soak_temperature:
+;Display_soak_temperature:
     ;WriteCommand(#0x01)
    ; Set_Cursor(1,1)
 	;Send_Constant_String(#setsoaktemperature)
