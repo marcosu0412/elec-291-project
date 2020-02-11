@@ -74,7 +74,6 @@ x: ds 4 ;for use in math32
 y: ds 4
 bcd: ds 5
 
-
 ;-------------------------------------------;
 ;                  Flags                    ;
 ;-------------------------------------------;
@@ -89,7 +88,6 @@ reflow_temp_flag:       dbit 1
 abort_flag: 		    dbit 1 
 mf:                     dbit 1
 power_flag:             dbit 1 
-
 
 ;-------------------------------------------;
 ;         Pins and Constant Strings         ;
@@ -192,8 +190,6 @@ Timer0_ISR:
 	mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
 	jnz Inc_Done
 	inc Count1ms+1
-	
-	
 
 Inc_Done:
 	; Check if full second has passed
@@ -329,7 +325,6 @@ L1_1:	djnz R0, L1_1 ; 2 machine cycles-> 2*0.27126us*184=100us
 	djnz R1, L2_1 ; 100us*250=0.025s
 	djnz R2, L3_1 ; 0.025s*40=1s
 	ret
-
 
 ;---------------------------------;
 ; Initialize the serial port      ;
@@ -469,7 +464,6 @@ Hex_to_bcd_8bit:
 	mov R0, a
 	ret
 
-
 SendTemp:
 	mov dptr, #HexAscii 
 	
@@ -512,11 +506,7 @@ SendString:
 SendString_L1:
 	ret
 
-
-
-
-
-;Function to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)
+;Function to automatically adjust oven power depending on current and desired temperature (input a decimal in hex format)
 Temp_Set:
 	push acc
 	mov a, ttemp+1
@@ -571,15 +561,16 @@ main:
 loop:   
         lcall check_abort
         jb abort_flag, abort
-	    lcall accumulate_loop_start
-		clr a 
-	    mov a, oven_state
-		cjne a, #0, checkmain1
-		ljmp state1 ; jump to ramp to soak
+	jnb reset_button, abort
+	lcall accumulate_loop_start
+	clr a 
+	mov a, oven_state
+	cjne a, #0, checkmain1
+	ljmp state1 ; jump to ramp to soak
 checkmain1:	
         cjne a, #1, checkmain2
-		clr a
-		ljmp state2 ; jump to soak
+	clr a
+	ljmp state2 ; jump to soak
 		
 checkmain2:	
         cjne a, #2, checkmain3
@@ -606,19 +597,17 @@ check_abort:
 abort_return:
         ret       
 abort:
-    Set_Cursor(1,1)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#displayabort)
-    Set_Cursor(2,1)
-    Send_Constant_String(#defaulstate2)
-    clr POWER_OUT
+    	Set_Cursor(2,1)
+    	Send_Constant_String(#defaulstate2)
+    	clr POWER_OUT
     
-    jb button_reset, abort; if the 'button_updown' button is not pressed skip
+    	jb button_reset, abort; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
-	jb button_state, abort  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
-	jnb button_state, $
-    
-    ljmp Default_state
-
+	jb button_reset, abort  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
+	jnb button_reset, $
+    	ljmp main
 
 accumulate_loop_start:
     ; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
@@ -661,24 +650,25 @@ accumulate_loop:
         
 Default_state:
 	;set power to 0 (turn off oven)
-    clr POWER_OUT
-    Set_Cursor(1,1)
-    Send_Constant_String(#defaultstate)
-    jb button_state, Default_state; if the 'button_updown' button is not pressed skip
+    	clr POWER_OUT
+    	Set_Cursor(1,1)
+    	Send_Constant_String(#defaultstate)
+    	jb button_state, Default_state; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb button_state, Default_state  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_state, $
 	jb sw_start_stop, param_adjust ;if switch down, adjust parameters
 	setb TR0; Start the timer 
-    ljmp loop
+    	ljmp loop
 
 param_adjust:
-    jnb    sw_start_stop, default_state
+    	jnb    sw_start_stop, default_state
+	jnb 	button_reset, abort
 	mov a, adjust_state
 	cjne 	a, #0, check1 ;jump if bit set (switch down)
 	ljmp 	soak_temp
 check1:
-    mov a, adjust_state
+    	mov a, adjust_state
 	cjne a, #1, check2
 	clr a 
 	ljmp soak_time
