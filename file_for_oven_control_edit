@@ -654,7 +654,9 @@ Default_state:
 	jnb button_state, $
     
     jb sw_start_stop, check_flag
+	WriteCommand(#0x01)      ; just got here but not going to start_oven 
 	ljmp start_oven
+
 check_flag:
 	WriteCommand(#0x01)
     jb soak_temp_flag, to_soak_temp
@@ -690,7 +692,7 @@ start_oven:
 	Set_Cursor(2,5)
 	Display_BCD(#'s')
 	
-	Set_Cursor(1,10)
+	Set_Cursor(1,10) ; display current time 
 	Display_BCD(ctemp+1)
 	Set_Cursor(1,12)
 	Display_BCD(ctemp+0)
