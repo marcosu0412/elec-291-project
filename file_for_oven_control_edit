@@ -230,6 +230,10 @@ done5:
 	add a,#0x01
 	da a
 	mov ctime+1,a 
+adjust_lower:
+    	add a,#0x01
+    	da a
+	mov ctime+0,a	
 	
 	jb preheat_flag, done_adjust
 	jnb soak_flag, done1
@@ -241,13 +245,9 @@ done5:
 	mov tt+0,#0x99
 	
 	ljmp done_adjust
-adjust_lower:
-    add a,#0x01
-    da a
-	mov ctime+0,a
+
 done_adjust:
-    clr a
-    
+    	clr a
 	mov Count1ms+0, a
 	mov Count1ms+1, a
 	; Increment the current time counter
