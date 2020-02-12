@@ -21,9 +21,7 @@ org 0x005B
 
 $NOLIST
 $include(LCD_4bit.inc)
-$LIST
-
-$NOLIST
+$include(LCD_4bit_LPC9351.inc) ; A library of LCD related functions and utility macros
 $include(math32.inc)
 $LIST
 
@@ -41,6 +39,7 @@ BAUD                EQU 115200
 BRVAL               EQU ((XTAL/BAUD)-16)
 
 FLASH_CE EQU P2.4
+SOUND	 EQU P2.7
 
 ; Commands supported by the SPI flash memory according to the datasheet
 WRITE_ENABLE     EQU 0x06  ; Address:0 Dummy:0 Num:0
@@ -78,6 +77,7 @@ oven_state: ds 1
 x: ds 4 ;for use in math32
 y: ds 4
 bcd: ds 5
+FSMState:	ds 1
 
 
 ;-------------------------------------------;
@@ -102,6 +102,7 @@ cooling_flag:           dbit 1
 finish_flag:            dbit 1 
 peak_flag:              dbit 1
 bcd_flag: 				dbit 1
+Sec5:			dbit 1
 
  ;-------------------------------------------;
 ;         Pins and Constant Strings         ;
@@ -333,6 +334,253 @@ CCU_ISR_Done:
 	pop acc
 	clr P2.6
 	reti
+	
+	
+
+; Sounds we need in the SPI flash: 0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 12; 13; 14; 15; 16; 17; 18; 19; 20; 30; 40; 50; minutes; seconds;
+; Approximate index of sounds in file 'stop_watch.wav'
+; This was generated using: computer_sender -Asw_index.asm -S2000 stop_watch.wav
+; Approximate index of sounds in file 'uwu.wav'
+; Approximate index of sounds in file 'fuckme7.wav'
+sound_index:
+    db 0x00, 0x00, 0x2d ; 0 
+    db 0x00, 0x31, 0x88 ; 1 
+    db 0x00, 0x6f, 0xfe ; 2 
+    db 0x00, 0xad, 0x21 ; 3 
+    db 0x00, 0xf1, 0x8b ; 4 
+    db 0x01, 0x37, 0x8c ; 5 
+    db 0x01, 0x81, 0xd2 ; 6 
+    db 0x01, 0xcf, 0x06 ; 7 
+    db 0x02, 0x1b, 0x0e ; 8 
+    db 0x02, 0x50, 0xff ; 9 
+    db 0x02, 0x98, 0xb2 ; 10 
+    db 0x02, 0xdd, 0x06 ; 11 
+    db 0x03, 0x2b, 0x28 ; 12 
+    db 0x03, 0x78, 0x79 ; 13 
+    db 0x03, 0xc8, 0x78 ; 14 
+    db 0x04, 0x1f, 0xe2 ; 15 
+    db 0x04, 0x73, 0xea ; 16 
+    db 0x04, 0xcf, 0x6d ; 17 
+    db 0x05, 0x34, 0x7b ; 18 
+    db 0x05, 0x7f, 0xca ; 19 
+    db 0x05, 0xdb, 0x2d ; 20 
+    db 0x06, 0x27, 0xad ; 21 
+    db 0x06, 0x6a, 0xaf ; 22 
+    db 0x06, 0xb3, 0x94 ; 23 
+    db 0x06, 0xfb, 0x69 ; 24 
+    db 0x07, 0x51, 0xf3 ; 25 
+    db 0x07, 0xa9, 0xac ; 26 
+    db 0x07, 0xeb, 0x4c ; 27 
+    db 0x08, 0x38, 0x9c ; 28 
+    db 0x08, 0x88, 0x9e ; 29 
+    db 0x08, 0xfe, 0xb1 ; 30 
+    db 0x09, 0x7d, 0x22 ; 31 
+    db 0x09, 0xe9, 0x62 ; 32 
+    db 0x0a, 0x2b, 0x40 
+
+; Size of each sound in 'sound_index'
+Size_length:
+    db 0x00, 0x31, 0x5b ; 0 
+    db 0x00, 0x3e, 0x76 ; 1 
+    db 0x00, 0x3d, 0x23 ; 2 
+    db 0x00, 0x44, 0x6a ; 3 
+    db 0x00, 0x46, 0x01 ; 4 
+    db 0x00, 0x4a, 0x46 ; 5 
+    db 0x00, 0x4d, 0x34 ; 6 
+    db 0x00, 0x4c, 0x08 ; 7 
+    db 0x00, 0x35, 0xf1 ; 8 
+    db 0x00, 0x47, 0xb3 ; 9 
+    db 0x00, 0x44, 0x54 ; 10 
+    db 0x00, 0x4e, 0x22 ; 11 
+    db 0x00, 0x4d, 0x51 ; 12 
+    db 0x00, 0x4f, 0xff ; 13 
+    db 0x00, 0x57, 0x6a ; 14 
+    db 0x00, 0x54, 0x08 ; 15 
+    db 0x00, 0x5b, 0x83 ; 16 
+    db 0x00, 0x65, 0x0e ; 17 
+    db 0x00, 0x4b, 0x4f ; 18 
+    db 0x00, 0x5b, 0x63 ; 19 
+    db 0x00, 0x4c, 0x80 ; 20 
+    db 0x00, 0x43, 0x02 ; 21 30
+    db 0x00, 0x48, 0xe5 ; 22 40
+    db 0x00, 0x47, 0xd5 ; 23 50
+    db 0x00, 0x56, 0x8a ; 24 60
+    db 0x00, 0x57, 0xb9 ; 25 70
+    db 0x00, 0x41, 0xa0 ; 26 80
+    db 0x00, 0x4d, 0x50 ; 27 90
+    db 0x00, 0x50, 0x02 ; 28 hundred
+    db 0x00, 0x76, 0x13 ; 29 The temp is
+    db 0x00, 0x7e, 0x71 ; 30 Degrees celsius
+    db 0x00, 0x6c, 0x40 ; 31 fucking gay
+    db 0x00, 0x41, 0xde ; 32 
+
+
+
+; The sound and its length from the two tables above is passed in the accumulator.
+Play_Sound_Using_Index:
+	setb SOUND ; Turn speaker on
+	clr TMOD20 ; Stop the CCU from playing previous request
+	setb FLASH_CE
+	
+	; There are three bytes per row in our tables, so multiply index by three
+	mov b, #3
+	mul ab
+	mov R0, a ; Make a copy of the index*3
+	
+	clr FLASH_CE ; Enable SPI Flash
+	mov a, #READ_BYTES
+	lcall Send_SPI
+	; Set the initial position in memory of where to start playing
+	mov dptr, #sound_index
+	mov a, R0
+	movc a, @a+dptr
+	lcall Send_SPI
+	inc dptr
+	mov a, R0
+	movc a, @a+dptr
+	lcall Send_SPI
+	inc dptr
+	mov a, R0
+	movc a, @a+dptr
+	lcall Send_SPI
+	; Now set how many bytes to play
+	mov dptr, #Size_Length
+	mov a, R0
+	movc a, @a+dptr
+	mov w+2, a
+	inc dptr
+	mov a, R0
+	movc a, @a+dptr
+	mov w+1, a
+	inc dptr
+	mov a, R0
+	movc a, @a+dptr
+	mov w+0, a
+	
+	mov a, #0x00 ; Request first byte to send to DAC
+	lcall Send_SPI
+	
+	setb TMOD20 ; Start playback by enabling CCU timer
+
+	ret
+
+
+;---------------------------------------------------------------------------------;
+; This is the FSM that plays minutes and seconds after the STOP button is pressed ;
+; The state diagram of this FSM is available as 'Stop_Watch_FSM.pdf'              ;
+;---------------------------------------------------------------------------------;
+FSM_Start:
+	jb Sec5, state_3 
+	;mov FSMState, #0
+	;cjne a, #0, State_3
+	;clr Sec5
+	ret
+State_3:
+	mov a, #29 ;"Temperature currently:x"
+	lcall Play_Sound_Using_Index
+	mov FSMState, #3
+State_3D:
+	mov a, FSMState
+	cjne a, #3, State_4
+	jb TMOD20, State_3D
+	mov FSMState, #4
+	sjmp State_3D
+	;hundreds place check
+State_4:
+	mov a, BCD+1
+	cjne a, #0, State_5
+	ljmp State_7
+	;play hundreds place
+State_5: 
+	mov a, BCD+1
+	lcall Play_Sound_Using_Index
+	mov FSMState, #5
+State_5D:
+	mov a,FSMState
+	cjne a, #5, State_6
+	jb TMOD20, State_5D
+	mov FSMState, #6
+	sjmp State_5D
+State_6:
+	mov a,#28 ;100 deg call
+	lcall Play_Sound_Using_Index
+	mov FSMState, #6
+State_6D:
+	mov a, FSMState
+	cjne a, #6, State_7
+	jb TMOD20, State_6D
+	mov FSMState, #7
+	sjmp State_6D
+State_7:
+	mov a, BCD
+	swap a
+	anl a, #0x0F
+	cjne a, #1, State_9
+State_8:
+	mov a, BCD
+	lcall Play_Sound_Using_Index
+	mov FSMState, #8
+State_8D:
+	mov a, FSMState
+	cjne a, #8, State_12
+	jb TMOD20, State_8D
+	mov FSMState, #9
+	sjmp State_8D	
+State_9:
+	mov a, BCD
+	swap a
+	anl a, #0x0F
+	cjne a, #0, State_11
+State_10:
+	mov a, BCD
+	anl a, #0x0F
+	lcall Play_Sound_Using_Index	
+	mov FSMState, #10
+State_10D:
+	mov a, FSMState
+	cjne a, #10, State_12
+	jb TMOD20, State_10D
+	mov FSMState, #12
+	sjmp State_10D
+State_11:
+	mov a, BCD
+	swap a
+	anl a, #0x0F
+	add a, #18
+	lcall Play_Sound_Using_Index
+	mov FSMState, #11
+State_11D:
+	mov a, FSMState
+	cjne a, #11, State_13
+	jb TMOD20, State_11D
+	mov FSMState, #12
+	sjmp State_11D
+State_12:
+	mov a, #30 ;Celsius call
+	lcall Play_Sound_Using_Index
+	mov FSMState, #12
+State_12D:
+	mov a, FSMState
+	cjne a, #12, DONE
+	jb TMOD20, State_12D
+	mov FSMState, #0
+	sjmp State_12D
+State_13:
+	mov a, BCD
+	anl a, #0x0F
+	cjne a, #0, State_10
+	ljmp State_12
+DONE:
+	clr Sec5
+	mov FSMState, #0
+	ret
+; End of FMS that plays minutes and seconds
+
+
+
+
+	
+	
 
 ;---------------------------------;
 ; Initial configuration of ports. ;
