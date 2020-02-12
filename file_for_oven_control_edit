@@ -233,7 +233,26 @@ adjust_lower:
     	add a,#0x01
     	da a
 	mov ctime+0,a	
-	ljmp done_adjust
+	
+	jb preheat_flag, done_adjust
+	jnb soak_flag, check_ramp 	;keeping track of time spent soaking
+	
+	mov a, tt+0
+	cjne a, #0x00, dec_tt
+	mov a, tt+1
+	cjne a, #0x00, dec_tt
+	clr soak_flag, done_adjust	
+	
+dec_tt:
+	subb a, #0x01
+	done_adjust
+
+check_ramp:
+	jb ramp_flag, done_adjust
+	jnb reflow_flag, done_adjust 	;keeping track of time spent in reflow
+	mov a, tt+0
+	cjne a, #0x00, dec_tt
+	clr reflow_flag, done_adjust
 
 done_adjust:
     	clr a
@@ -911,10 +930,7 @@ reflow_state:
 	Send_Constant_String(#displaystate4)
 	mov ttemp+0, #0x30
 	mov ttemp+1, #0x02
-	jb peak_flag, turn_off_power
 	lcall Temp_Set
-	ljmp start_oven
-turn_off_power:
 	ljmp start_oven
 
 cooling_state:
