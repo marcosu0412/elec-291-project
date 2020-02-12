@@ -697,7 +697,7 @@ check_abort:
     cjne a, #0x02, abort_return
 	mov a, ctemp+0
 	clr c
-	subb a, #0x40
+	subb a, #0x43
 	jc abort_return
 	;cjne a, #0x43, abort_return
 	setb abort_flag
@@ -769,6 +769,26 @@ done_ramp_to_reflow:
 	ljmp start_oven
 
 reflow_state:
+    Set_Cursor(1,1)
+	Send_Constant_String(#displaystate4)
+	mov ttemp+0, #0x30
+	mov ttemp+1, #0x02
+	lcall Temp_Set
+    ljmp start_oven
+
+cooling_state:
+    Set_Cursor(1,1)
+	Send_Constant_String(#displaystate5)
+    clr POWER_OUT
+	
+    ljmp start_oven
+
+
+	
+	
+
+    
+    
     
     
 
