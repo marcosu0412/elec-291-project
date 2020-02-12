@@ -215,10 +215,22 @@ Inc_Done:
 	cjne a, #low(1000), Timer0_ISR_done ; Warning: this instruction changes the carry flag!
 	mov a, Count1ms+1
 	cjne a, #high(1000), Timer0_ISR_done
-	
-	inc ctime
 
+	mov a, ctime
+	cjne a, #0x99, adjust_upper
+	inc a
+	da a
+	mov ctime+0, a
+	sjmp done_adjust
+adjust_upper:
+	mov ctime+0, #0x00
+	mov a, ctime+1
+	inc a
+	da a
+	mov ctime+1, a
+done_adjust:
 	clr a
+	
 	mov Count1ms+0, a
 	mov Count1ms+1, a
 	; Increment the current time counter
@@ -738,8 +750,6 @@ to_reflow_state:
     ljmp reflow_state
 to_cooling_state:
     ljmp cooling_state
-
-	WriteCommand(#0x01)
 
 display_finish:
 	WriteCommand(#0x01)
