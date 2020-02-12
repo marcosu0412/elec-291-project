@@ -577,7 +577,7 @@ main:
 	mov ctime+1, #0x00
 	mov stime, #0x60  ; soak time
 	mov stime+1, #0x00
-	mov rtime, #0x45   ; reflow time   
+	mov rtime, #0x30   ; reflow time   
 	mov rtime+1, #0x00
 	mov tt, #0x00
     ljmp Default_state
@@ -627,9 +627,9 @@ soak_temp:
 	Display_BCD(stemp)
 
 check_button_state:
-	jb button_state, soak_temp 
+	jb button_state, check_updown_button
 	Wait_Milli_Seconds(#50)	
-	jb button_state, soak_temp
+	jb button_state, check_updown_button
 	jnb button_state, $
     
     cpl soak_temp_flag
@@ -642,7 +642,6 @@ check_updown_button:
 	jb button_updown, soak_temp 
 	jnb button_updown, $
    
-    jb sw_updown, dec_soak_temp
 
 inc_soak_temp:
     mov stemp+1, #0x01
@@ -652,39 +651,27 @@ inc_soak_temp:
     cjne a, #0x71, inc_soak_temp_1
     mov a, #0x30
     mov stemp, a
-    ljmp check_updown_button
+    ljmp check_button_state
 
 inc_soak_temp_1:
     mov stemp, a 
-    ljmp check_updown_button
-
-dec_soak_temp:
-    mov stemp+1,#0x01
-    mov a, stemp
-    subb a, #0x01
-    da a
-    cjne a, #0x29,dec_soak_temp_1
-    mov a, #0x70
-    mov stemp, a
-   	ljmp check_updown_button
-dec_soak_temp_1:
-    mov stemp, a
-    ljmp check_updown_button
-
+    ljmp check_button_state
 
 soak_time:
     Set_Cursor(1,1)
 	Send_Constant_String(#setsoaktime)
 	Set_Cursor(2,1)
-	Display_BCD(stime)
+	Display_BCD(stime+1)
+	Set_Cursor(2,3)
+	Display_BCD(stime+0)
 	
 check_button_state_2:
-    jb button_state, soak_time
+    jb button_state, check_updown_button_2
     Wait_Milli_Seconds(#50)	
-    jb button_state, soak_time
+    jb button_state, check_updown_button_2
     jnb button_state, $
     
-    cpl soak_time_flag
+    clr soak_time_flag
     ljmp check_flag
     
 check_updown_button_2:  
@@ -693,23 +680,24 @@ check_updown_button_2:
     jb button_updown, soak_time
     jnb button_updown, $
     
-	jb sw_updown, dec_soak_time
-
+	;jb sw_updown, dec_soak_time
+    
 inc_soak_time:
     mov a, stime+0
 	cjne a, #0x99, inc_soak_time_upper
+    mov stime+1, #0x01
+	mov stime+0, #0x00
+    ljmp check_button_state_2
+inc_soak_time_1:
+   mov stime+0,a
+   ljmp check_button_state_2
+inc_soak_time_upper:
     add a, #0x01
     da a
 	cjne a, #0x21, inc_soak_time_1
     mov a, #0x60
     mov stime+0, a
 	mov stime+1, #0x00
-    ljmp check_button_state_2
-inc_soak_time_1:
-   ljmp check_button_state_2
-inc_soak_time_upper:
-    mov stime+1, #0x01
-	mov stime+0, #0x00
 	ljmp inc_soak_time_1
 
 
@@ -725,9 +713,9 @@ dec_soak_time_2:
     cjne a, #0x59,dec_soak_time_1
     mov stime+0, #0x20
 	mov stime+1, #0x01
-    ljmp check_updown_button_2
+    ljmp check_button_state_2
 dec_soak_time_1:
-   ljmp check_updown_button_2
+   ljmp check_button_state_2
     
 
 reflow_temp:
@@ -744,9 +732,8 @@ check_button_state_3:
     jb button_state, check_updown_button_3
 	jnb button_state, $
 
-    cpl reflow_temp_flag
+    clr reflow_temp_flag
 	ljmp check_flag
-tooo_reflow_temp:
 
 
 check_updown_button_3:  
@@ -755,30 +742,31 @@ check_updown_button_3:
     jb button_updown, reflow_temp
     jnb button_updown, $
     
-	jb sw_updown, dec_reflow_temp 
+	;jb sw_updown, dec_reflow_temp 
 
 
 inc_reflow_temp:
-    mov a, rtemp
-    add a, #0x01
+    mov rtemp+1, #0x02
+    mov a, rtemp+0
+	add a, #0x01
     da a
-    cjne a, #0x31, inc_reflow_temp_1
-    mov a, #0x19
-    mov rtemp, a
-    ljmp check_updown_button_3
+	cjne a, #0x41, inc_reflow_temp_1
+    mov rtemp+0, #0x17
+    ljmp check_button_state_3
 inc_reflow_temp_1:
-    ljmp check_updown_button_3
+    mov rtemp+0, a
+    ljmp check_button_state_3
     
-dec_reflow_temp:
-    mov a, rtemp
-    dec a 
-    da a
-    cjne a, #0x18, dec_reflow_temp_1
-    mov a, #0x30
-    mov rtemp, a
-    ljmp check_updown_button_3
-dec_reflow_temp_1:
-    ljmp check_updown_button_3
+;dec_reflow_temp:
+   ; mov a, rtemp
+   ; dec a 
+   ; da a
+   ; cjne a, #0x18, dec_reflow_temp_1
+   ; mov a, #0x30
+   ;; mov rtemp, a
+   ; ljmp check_updown_button_3
+;dec_reflow_temp_1:
+   ; ljmp check_updown_button_3
 ;reflow_temp_done:
     ;jb button_state, reflow_temp
    ; Wait_Milli_Seconds(#50)	
@@ -794,9 +782,9 @@ reflow_time:
 	Display_BCD(rtime)
 
 check_button_state_4:
-    jb button_state, reflow_time
+    jb button_state, check_updown_button_4
     Wait_Milli_Seconds(#50)
-    jb button_state, reflow_time
+    jb button_state, check_updown_button_4
     jnb button_state, $
     
 	setb soak_temp_flag
@@ -811,29 +799,31 @@ check_updown_button_4:
     jb button_updown, reflow_time
     jnb button_updown, $
     
-	jb sw_updown, dec_reflow_time
+	;jb sw_updown, dec_reflow_time
 	
 inc_reflow_time:
-	mov a, rtime
+    mov rtime+1, #0x00
+	mov a, rtime+0
 	add a, #0x01
 	da a
-	cjne a, #0x60, inc_reflow_time_1
+	cjne a, #0x61, inc_reflow_time_1
 	mov a, #0x30
-	mov rtime, a
-	ljmp check_updown_button_4
+	mov rtime+0, a
+	ljmp check_button_state_4
 inc_reflow_time_1:
-	ljmp check_updown_button_4
+    mov rtime+0, a
+	ljmp check_button_state_4
 	
-dec_reflow_time:
-	mov a, rtime
-	dec a
-	da a
-	cjne a, #0x30, dec_reflow_time_1
-	mov a, #0x60
-	mov rtemp, a
-	ljmp check_updown_button_4
-dec_reflow_time_1:
-	ljmp check_updown_button_4
+;ec_reflow_time:
+	;mov a, rtime
+	;dec a
+	;da a
+	;cjne a, #0x30, dec_reflow_time_1
+	;mov a, #0x60
+	;mov rtemp, a
+;	ljmp check_updown_button_4
+;dec_reflow_time_1:
+	;ljmp check_updown_button_4
 	
 
 
