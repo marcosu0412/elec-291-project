@@ -63,7 +63,7 @@ dseg at 0x30
 Count1ms:   ds 2; Used to determine when half a second has passed
 w:		    ds 3; 24-bit play counter. Decremented in CCU ISR
 ctemp:      ds 2   ; current temperature
-ctime:      ds 4   ; current time
+ctime:      ds 2   ; current time
 
 rtemp:		ds 2   ; reflow  temperature
 stemp:		ds 2   ; soak temperature
@@ -648,9 +648,9 @@ Default_state:
     Set_Cursor(2,1)
     Send_Constant_String(#defaulstate2)
     
-    jb button_state, loop
+    jb button_state, Default_state
 	Wait_Milli_Seconds(#50)	
-	jb button_state, loop 
+	jb button_state, Default_state
 	jnb button_state, $
     
     jb sw_start_stop, check_flag
@@ -674,14 +674,11 @@ to_reflow_temp:
 to_reflow_time:
     ljmp reflow_time
 
-loop:
-    ljmp Default_state
-
 to_abort:
     ljmp abort
 
 start_oven:
-    lcall check_abort
+    ljmp check_abort
     jb abort_flag, to_abort
 	lcall accumulate_loop_start  
 
@@ -749,8 +746,8 @@ display_finish:
     
     
 check_abort:
-    mov a, ctemp+1
-    cjne a, #0x02, abort_return
+    	mov a, ctemp+1
+    	cjne a, #0x02, abort_return
 	mov a, ctemp+0
 	clr c
 	subb a, #0x43
@@ -758,14 +755,14 @@ check_abort:
 	;cjne a, #0x43, abort_return
 	setb abort_flag
 abort_return:		
-		ret 
+		ljmp start_oven 
 abort:
-    Set_Cursor(1,1)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#displayabort)
-    Set_Cursor(2,1)
-    Send_Constant_String(#defaulstate2)
-    clr POWER_OUT
-    jb button_reset, abort; if the 'button_updown' button is not pressed skip
+   	Set_Cursor(2,1)
+    	Send_Constant_String(#defaulstate2)
+    	clr POWER_OUT
+    	jb button_reset, abort; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb button_reset, abort  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_reset, $
