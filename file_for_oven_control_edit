@@ -212,7 +212,6 @@ Timer0_ISR:
 	jnz Inc_Done
 	inc Count1ms+1
 	
-	
 
 Inc_Done:
 	; Check if full second has passed
@@ -234,16 +233,6 @@ adjust_lower:
     	add a,#0x01
     	da a
 	mov ctime+0,a	
-	
-	jb preheat_flag, done_adjust
-	jnb soak_flag, done1
-	mov a, tt+0
-	cjne a, #0x00, dec_tt
-	mov a, tt+1
-	cjne a, #0x01, done2 
-	mov tt+1,#0x00
-	mov tt+0,#0x99
-	
 	ljmp done_adjust
 
 done_adjust:
@@ -255,43 +244,9 @@ donee:
 	pop psw
 	pop acc
 	reti
-done2:
-	clr soak_flag
-	ljmp done_adjust
 Timer0_ISR_done:
 	ljmp donee
-dec_tt:
-	dec a
-	da a
-	mov tt+0,a
-	ljmp donee
-done1:
-	jb ramp_to_peak_flag, done_adjust
-	jnb reflow_flag, done_adjust
-	mov a, tt+0
-	cjne a, #0x01, done3a 
-	ljmp done3
-done3a:
-	mov a, tt+0
-	cjne a, #0x00, done3b
-	ljmp done3	
-done3b:
-	dec a 
-	da a
-	dec a 
-	da a 
-	mov tt+0,a 
-	ljmp done_adjust
-done3:
-    	jb peak_flag, done4
-	setb peak_flag
-	mov tt+0,rtime+0
-	mov tt+1, #0x0
-	clr POWER_OUT
-	ljmp done_adjust
-done4:
-	clr reflow_flag
-	ljmp done_adjust
+
 
 ;---------------------------------;
 ; Initializing CCU                ;
@@ -802,7 +757,18 @@ display_finish:
     
     
 check_abort:
-    	mov a, ctemp+1
+	jnb preheat_flag, check_abort2
+	mov a, #0x60
+	cjne a, ctime+0, check_abort2 	;check if time in preheat state has been at least 60 seconds
+	mov a, #0x00
+	cjne a, ctemp+1, check_abort2
+	mov a, #0x50
+	subb a, ctemp+0
+	jc check_abort2			;if current temp has not reached at least 50C after 60s, set abort flag
+	setb abort_flag
+	sjmp abort_return
+check_abort2:
+	mov a, ctemp+1
     	cjne a, #0x02, abort_return
 	mov a, ctemp+0
 	clr c
