@@ -240,12 +240,21 @@ adjust_lower:
 	mov a, tt+0
 	cjne a, #0x00, dec_tt
 	mov a, tt+1
-	cjne a, #0x00, dec_tt
+	cjne a, #0x00, dec_tt_1
 	clr soak_flag, done_adjust	
-	
+
 dec_tt:
 	subb a, #0x01
+	da a
+	mov tt+0, a
 	done_adjust
+
+dec_tt_1:
+	subb a, #0x01
+	da a
+	mov tt+1, a
+	done_adjust
+	
 
 check_ramp:
 	jb ramp_flag, done_adjust
