@@ -100,7 +100,7 @@ ramp_to_peak_flag:      dbit 1
 reflow_flag:            dbit 1 
 cooling_flag:           dbit 1 
 finish_flag:            dbit 1 
-
+peak_flag:              dbit 1
 
  ;-------------------------------------------;
 ;         Pins and Constant Strings         ;
@@ -172,6 +172,9 @@ DB 'Press button to' , 0
 defaulstate2:
 DB 'adjust or start' , 0
 
+finished:
+DB 'FINISHED!!' , 0
+
 ;---------------------------------;
 ; Initializing Timer0             ;
 ;---------------------------------;
@@ -225,9 +228,9 @@ donee:
 	reti
 done2:
 	clr soak_flag
-	ljmp donne
+	ljmp donee
 Timer0_ISR_done:
-	jb preheat_flag, done1
+	jb preheat_flag, donee
 	jnb soak_flag, done1
 	mov a, tt+0
 	cjne a, #0x00, dec_tt
@@ -235,19 +238,39 @@ Timer0_ISR_done:
 	cjne a, #0x01, done2 
 	mov tt+1,#0x00
 	mov tt+0,#0x99
-	ljmp donne
+	ljmp donee
 dec_tt:
 	dec a
 	da a
 	mov tt+0,a
 	ljmp donee
 done1:
-
-
-
-	pop psw
-	pop acc
-	reti
+	jb ramp_to_peak_flag, donee
+	jnb reflow_flag, donee
+	mov a, tt+0
+	cjne a, #0x01, done3a 
+	ljmp done3
+done3a:
+	mov a, tt+0
+	cjne a, #0x00, done3b
+	ljmp done3	
+done3b:
+	dec a 
+	da a
+	dec a 
+	da a 
+	mov tt+0,a 
+	ljmp donee
+done3:
+    jb peak_flag, done4
+	setb peak_flag
+	mov tt+0,rtime+0
+	mov tt+1, #0x0
+	clr POWER_OUT
+	ljmp donee
+done4:
+	clr reflow_flag
+	ljmp donee
 
 ;---------------------------------;
 ; Initializing CCU                ;
@@ -634,12 +657,14 @@ Default_state:
 	ljmp start_oven
 check_flag:
 	WriteCommand(#0x01)
-    jb soak_temp_flag, soak_temp
+    jb soak_temp_flag, to_soak_temp
     jb soak_time_flag, to_soak_time
     jb reflow_temp_flag, to_reflow_temp
     jb reflow_time_flag, to_reflow_time
     ljmp loop 
 
+to_soak_temp:
+    ljmp soak_temp
 to_soak_time:
     ljmp soak_time
 to_reflow_temp:
@@ -650,9 +675,12 @@ to_reflow_time:
 loop:
     ljmp Default_state
 
+to_abort:
+    ljmp abort
+
 start_oven:
     lcall check_abort
-    jb abort_flag, abort
+    jb abort_flag, to_abort
 	lcall accumulate_loop_start  
 
 	Set_Cursor(2,1) ; display current time
@@ -677,20 +705,46 @@ check_stop_button:
 	jb button_updown, check_state_flag
 	jnb button_updown, $
 	
+
 	jb preheat_flag, check_state_flag 
 	jb soak_flag, check_state_flag 
 	jb ramp_to_peak_flag, check_state_flag 
+	jnb reflow_flag, check_state_flag 
 	clr POWER_OUT
+	setb peak_flag
 	clr reflow_flag
 
 check_state_flag:
-	jb preheat_flag, preheat_state
-	jb soak_flag, soak_state
-	jb ramp_to_peak_flag, ramp_to_peak_state
-	jb reflow_flag, reflow_state
-	jb cooling_flag, cooling_state
-    jb finish_flag, finish_state
+	jb preheat_flag, to_preheat_state
+	jb soak_flag, to_soak_state
+	jb ramp_to_peak_flag, to_ramp_to_peak_state
+	jb reflow_flag, to_reflow_state
+	jb cooling_flag, to_cooling_state
 
+to_preheat_state:
+    ljmp preheat_state
+to_soak_state:
+    ljmp soak_state
+to_ramp_to_peak_state:
+    ljmp ramp_to_peak_state
+to_reflow_state:
+    ljmp reflow_state
+to_cooling_state:
+    ljmp cooling_state
+
+	WriteCommand(#0x01)
+
+display_finish:
+	Set_Cursor(1,1)
+	Send_Constant_String(#finished)
+
+	jb button_reset, display_finish
+	Wait_Milli_Seconds(#50)	
+	jb button_updown, display_finish
+	jnb button_reset, $
+
+	ljmp main
+    
     
 check_abort:
     mov a, ctemp+1
@@ -716,6 +770,43 @@ abort:
     
 	clr abort_flag
 	ljmp Default_state
+
+accumulate_loop_start:
+    ; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
+	Load_x(0)
+    mov x+0, AD0DAT0
+    mov R7, #255
+    lcall Wait10us
+accumulate_loop:
+    mov y+0, AD0DAT0
+    mov y+1, #0
+    mov y+2, #0
+    mov y+3, #0
+    lcall add32
+    lcall Wait10us
+	djnz R7, accumulate_loop
+	
+	; Now divide by 16 (2^4)
+	Load_Y(16)
+	lcall div32
+	; x has now the 12-bit representation of the temperature
+	
+	; Convert to temperature (C)
+	Load_Y(33000) ; Vref is 3.3V
+	lcall mul32
+	Load_Y(((1<<12)-1)) ; 2^12-1
+	lcall div32
+	Load_Y(27300)
+	lcall sub32
+	
+	lcall hex2bcd
+	mov ctemp+0, x+0 	;store calculated temperature into x
+	mov ctemp+1, x+1
+	;mov ctemp+2, x+2
+	lcall SendTemp ; Send to PUTTy, with 2 decimal digits to show that it actually works
+	lcall Wait1S
+    ret
+
 
 preheat_state:
     Set_Cursor(1,1)
@@ -773,15 +864,28 @@ reflow_state:
 	Send_Constant_String(#displaystate4)
 	mov ttemp+0, #0x30
 	mov ttemp+1, #0x02
+	jb peak_flag, turn_off_power
 	lcall Temp_Set
-    ljmp start_oven
+	ljmp start_oven
+turn_off_power:
+	ljmp start_oven
 
 cooling_state:
     Set_Cursor(1,1)
 	Send_Constant_String(#displaystate5)
-    clr POWER_OUT
-	
+    mov ttemp+0, #0x30
+	mov ttemp+1, #0x00
+	lcall Temp_Set
+    mov a, ctemp+1
+    cjne a, ttemp+1, to_cooling 
+	mov a, ctemp+0
+	cjne a, ttemp+0, to_cooling
+
+	clr cooling_flag
+	ljmp start_oven 
+to_cooling:
     ljmp start_oven
+
 
 
 	
