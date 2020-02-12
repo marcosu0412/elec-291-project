@@ -576,6 +576,7 @@ SendString_L1:
 
 ;Function to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)
 Temp_Set:
+	push acc
 	mov a, ttemp+1
 	clr c 
 	cjne a, ctemp+1, carry_check
@@ -663,7 +664,7 @@ check_flag:
     jb soak_time_flag, to_soak_time
     jb reflow_temp_flag, to_reflow_temp
     jb reflow_time_flag, to_reflow_time
-    ljmp loop 
+    ljmp Default_state 
 
 to_soak_temp:
     ljmp soak_temp
@@ -677,29 +678,36 @@ to_reflow_time:
 to_abort:
     ljmp abort
 
-start_oven:
-    ljmp check_abort
-    jb abort_flag, to_abort
-	lcall accumulate_loop_start  
 
-	Set_Cursor(2,1) ; display current time
+;---------------------------------;
+; Starts actual oven controller w ;
+; initialized values. Uncomment   ;
+; the lcall when thermocouple is  ;
+; plugged in                      ;
+;---------------------------------;
+start_oven:
+    	ljmp check_abort
+    	jb abort_flag, to_abort
+	;lcall accumulate_loop_start  
+	mov ctime, #0x67 	;some random value while thermocouple isnt plugged in
+	Set_Cursor(2,1) 	; display current time
 	Display_BCD(ctime+1)
 	Set_Cursor(2,3)
 	Display_BCD(ctime+0)
 	Set_Cursor(2,5)
-	Display_BCD(#'s')
+	WriteData(#'s')
 	
 	Set_Cursor(1,10) ; display current time 
 	Display_BCD(ctemp+1)
 	Set_Cursor(1,12)
 	Display_BCD(ctemp+0)
 	Set_Cursor(1,14)
-	Display_BCD(#223) ;degrees character
+	WriteData(#223) ;degrees character
 	Set_Cursor(1,15)
-	Display_BCD(#'C')
+	WriteData(#'C')
 
 check_stop_button: 
-    jb button_updown, check_state_flag 
+    	jb button_updown, check_state_flag 
 	Wait_Milli_Seconds(#50)	
 	jb button_updown, check_state_flag
 	jnb button_updown, $
@@ -734,6 +742,8 @@ to_cooling_state:
 	WriteCommand(#0x01)
 
 display_finish:
+	WriteCommand(#0x01)
+	Wait_Milli_Seconds(#2)	
 	Set_Cursor(1,1)
 	Send_Constant_String(#finished)
 
@@ -859,7 +869,7 @@ done_ramp_to_reflow:
 	ljmp start_oven
 
 reflow_state:
-    Set_Cursor(1,1)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate4)
 	mov ttemp+0, #0x30
 	mov ttemp+1, #0x02
@@ -870,31 +880,28 @@ turn_off_power:
 	ljmp start_oven
 
 cooling_state:
-    Set_Cursor(1,1)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate5)
-    mov ttemp+0, #0x30
+    	mov ttemp+0, #0x40
 	mov ttemp+1, #0x00
 	lcall Temp_Set
-    mov a, ctemp+1
-    cjne a, ttemp+1, to_cooling 
+    	mov a, ctemp+1
+    	cjne a, ttemp+1, to_cooling 
 	mov a, ctemp+0
-	cjne a, ttemp+0, to_cooling
+	subb a, ttemp+0 	;if ctemp larger, not cool enough, carry not set
+	jnc to_cooling
 
 	clr cooling_flag
-	ljmp start_oven 
+	sjmp safe_to_touch 
 to_cooling:
-    ljmp start_oven
+    	ljmp start_oven
 
-
-
-	
-	
+safe_to_touch:
+	ljmp display_finish 		;stop oven when cool enough
+    
 
     
     
-    
-    
-
     
 
 
