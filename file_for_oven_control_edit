@@ -807,7 +807,7 @@ check_abort:
 	mov a, ctemp+0
 	clr c
 	subb a, #0x43
-	jc abort_return
+	jnc abort_return
 	;cjne a, #0x43, abort_return
 	setb abort_flag
 abort_return:		
