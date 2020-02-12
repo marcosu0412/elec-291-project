@@ -624,6 +624,8 @@ Power_on:
 	WriteData(#'O')
 	Set_Cursor(2,15)
 	WriteData(#'N')
+	Set_Cursor(2,16)
+	WriteData(#' ')
 	setb POWER_OUT
 	ret
 ;---------------------------------;
@@ -735,7 +737,6 @@ start_oven1:
    	mov ctemp+0, bcd+1 	;store calculated temperature into x
 	mov ctemp+1, bcd+2
 
-    ;jb bcd_flag, skip_display
 	Set_Cursor(2,1) 	; display current time
 	Display_BCD(ctime+1)
 	Set_Cursor(2,3)
@@ -757,7 +758,7 @@ start_oven1:
 	WriteData(#' ')
     
 check_stop_button: 
-    jb button_updown, check_state_flag 
+    	jb button_updown, check_state_flag 
 	Wait_Milli_Seconds(#50)	
 	jb button_updown, check_state_flag
 	jnb button_updown, $
@@ -804,8 +805,8 @@ display_finish:
     
     
 check_abort:
-    mov a, ctemp+1
-    cjne a, #0x02, abort_return
+    	mov a, ctemp+1
+    	cjne a, #0x02, abort_return
 	mov a, ctemp+0
 	clr c
 	subb a, #0x43
@@ -813,14 +814,14 @@ check_abort:
 	;cjne a, #0x43, abort_return
 	setb abort_flag
 abort_return:		
-		ret 
+		ljmp start_oven1 
 abort:
-    Set_Cursor(1,1)
+   	Set_Cursor(1,1)
 	Send_Constant_String(#displayabort)
-    Set_Cursor(2,1)
-    Send_Constant_String(#displayabort2)
-    clr POWER_OUT
-    jb button_reset, abort; if the 'button_updown' button is not pressed skip
+    	Set_Cursor(2,1)
+    	Send_Constant_String(#displayabort2)
+    	clr POWER_OUT
+    	jb button_reset, abort; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb button_reset, abort  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_reset, $
@@ -879,13 +880,8 @@ accumulate_loop:
 	mov a, R5
 	mov y+1,a
 	lcall add32
-    
-
-
-    lcall hex2bcd
-	setb bcd_flag
+    	lcall hex2bcd
 	lcall SendTemp
-	clr bcd_flag
     
 	;mov ctemp+0, x+0 	;store calculated temperature into x
 	;mov ctemp+1, x+1
@@ -897,10 +893,8 @@ ljmp done5
 
 
 preheat_state:
-    Set_Cursor(1,1)
-	jb bcd_flag, skip_display_1
+    	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate1)
-skip_display_1:
 	;mov a, stemp ; a equals setting temp lower bit
     	;clr c 
 	;subb a, ctemp
@@ -912,25 +906,25 @@ skip_display_1:
 	cjne a, ctemp+1, state1_2
 	mov a, stemp
 	cjne a, ctemp, state1_2
-    ljmp start_oven 
+    	ljmp start_oven 
 state1_2:
 	jc done_ramp_to_soak
-    ljmp start_oven
+    	ljmp start_oven
 done_ramp_to_soak:
-    clr preheat_flag
+    	clr preheat_flag
 	mov tt+0, stime+0
 	mov tt+1, stime+1 
 	ljmp start_oven
 
 
 soak_state:
-    Set_Cursor(1,1)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate2)
 	lcall Temp_Set
-    ljmp start_oven
+    	ljmp start_oven
 
 ramp_to_peak_state:
-    Set_Cursor(1,1)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate3)
 	mov ttemp+0, rtemp+0
 	mov ttemp+1, rtemp+1
@@ -942,9 +936,9 @@ ramp_to_peak_state:
 	ljmp start_oven 
 state3_2:
 	jc done_ramp_to_reflow
-    ljmp start_oven
+    	ljmp start_oven
 done_ramp_to_reflow:
-    clr ramp_to_peak_flag
+    	clr ramp_to_peak_flag
 	mov tt+0, rtime+0 
 	mov tt+1, #0x00
 	ljmp start_oven
