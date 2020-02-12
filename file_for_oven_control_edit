@@ -731,9 +731,8 @@ to_abort:
 
 start_oven:
     lcall check_abort
-    jb abort_flag, to_abort
-	 
-start_oven1:
+start_oven1:    
+	jb abort_flag, to_abort
    	mov ctemp+0, bcd+1 	;store calculated temperature into x
 	mov ctemp+1, bcd+2
 
