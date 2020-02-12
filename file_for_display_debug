@@ -137,7 +137,7 @@ setreflowtemperature:
 DB 'REFLOW TEMP', 0
 
 setreflowtime:
-DB 'Reflow Time', 0
+DB 'REFLOW TIME', 0
 
 displaystate1:
 DB 'Preheat ', 0
@@ -613,6 +613,7 @@ to_reflow_time:
     ljmp reflow_time
 
 loop:
+    
     ljmp Default_state
 
 ;in each of these, change display and read button_updown to adjust
@@ -728,11 +729,10 @@ reflow_temp:
     Display_BCD(rtemp)
 	
 check_button_state_3:
-    jb button_updown, reflow_temp ; check if button_down is pressed. 
+    jb button_state, check_updown_button_3 ; check if button_down is pressed. 
     Wait_Milli_Seconds(#50)	
-    jb button_updown, reflow_temp
-    jnb button_updown, $
-    jb sw_updown, dec_reflow_temp
+    jb button_state, check_updown_button_3
+	jnb button_state, $
 
     cpl reflow_temp_flag
 	ljmp check_flag
@@ -782,16 +782,14 @@ reflow_time:
 	Display_BCD(rtime)
 
 check_button_state_4:
-    jb button_updown, reflow_time
+    jb button_state, check_button_state_4
     Wait_Milli_Seconds(#50)
-    jb button_updown, reflow_time
-    jnb button_updown, $
-    jb sw_updown, dec_reflow_time
+    jb button_state, check_button_state_4
+    jnb button_state, $
     
-	setb reflow_time_flag
-	setb reflow_temp_flag
-	setb soak_time_flag
 	setb soak_temp_flag
+	setb soak_time_flag
+	setb reflow_time_flag
 	ljmp check_flag
 
 check_updown_button_4:  
