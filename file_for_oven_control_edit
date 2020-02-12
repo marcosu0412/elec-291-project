@@ -611,9 +611,19 @@ Carry_check:
 	jc Power_off 	;if ctemp larger than desired temp, turn off power
 	sjmp Power_on	;else turn on power
 Power_off:
-    clr POWER_OUT 
+	Set_Cursor(2,14)
+	WriteData(#'O')
+	Set_Cursor(2,15)
+	WriteData(#'F')
+	Set_Cursor(2,16)
+	WriteData(#'F')
+    	clr POWER_OUT 
 	ret
 Power_on:
+	Set_Cursor(2,14)
+	WriteData(#'O')
+	Set_Cursor(2,15)
+	WriteData(#'N')
 	setb POWER_OUT
 	ret
 ;---------------------------------;
