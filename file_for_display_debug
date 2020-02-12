@@ -598,12 +598,13 @@ Default_state:
     jb sw_start_stop, check_flag
 
 check_flag:
+	jnb sw_start_stop, Default_state
 	WriteCommand(#0x01)
-    jb soak_temp_flag, soak_temp
-    jb soak_time_flag, to_soak_time
-    jb reflow_temp_flag, to_reflow_temp
-    jb reflow_time_flag, to_reflow_time
-    ljmp loop 
+    	jb soak_temp_flag, soak_temp
+    	jb soak_time_flag, to_soak_time
+    	jb reflow_temp_flag, to_reflow_temp
+    	jb reflow_time_flag, to_reflow_time
+    	ljmp loop 
 
 to_soak_time:
     ljmp soak_time
