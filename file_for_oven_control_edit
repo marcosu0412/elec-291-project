@@ -63,7 +63,7 @@ dseg at 0x30
 Count1ms:   ds 2; Used to determine when half a second has passed
 w:		    ds 3; 24-bit play counter. Decremented in CCU ISR
 ctemp:      ds 2   ; current temperature
-ctime:      ds 2   ; current time
+ctime:      ds 4   ; current time
 
 rtemp:		ds 2   ; reflow  temperature
 stemp:		ds 2   ; soak temperature
@@ -101,6 +101,7 @@ reflow_flag:            dbit 1
 cooling_flag:           dbit 1 
 finish_flag:            dbit 1 
 peak_flag:              dbit 1
+bcd_flag: 				dbit 1
 
  ;-------------------------------------------;
 ;         Pins and Constant Strings         ;
@@ -117,11 +118,12 @@ LCD_D7 equ P1.6
 ;---------------------------------;
 ; Button/Switch Pins		  ;
 ;---------------------------------;
-sw_start_stop equ P3.1
-sw_updown     equ P2.1
+sw_start_stop equ P2.6
+;sw_updown     equ P2.1
 button_updown equ P0.2
 button_state  equ P3.0
 button_reset  equ P0.3
+button_start  equ P2.6
 
 ;---------------------------------;
 ; Temperature and Power		  ;
@@ -175,6 +177,9 @@ DB 'adjust or start' , 0
 finished:
 DB 'FINISHED!!' , 0
 
+displayabort2:
+DB 'PRESS RESET',0
+
 ;---------------------------------;
 ; Initializing Timer0             ;
 ;---------------------------------;
@@ -212,25 +217,31 @@ Timer0_ISR:
 Inc_Done:
 	; Check if full second has passed
 	mov a, Count1ms+0
-	cjne a, #low(1000), Timer0_ISR_done ; Warning: this instruction changes the carry flag!
+	cjne a, #low(55), Timer0_ISR_done ; Warning: this instruction changes the carry flag!
 	mov a, Count1ms+1
-	cjne a, #high(1000), Timer0_ISR_done
-
-	mov a, ctime
-	cjne a, #0x99, adjust_upper
-	inc a
-	da a
-	mov ctime+0, a
-	sjmp done_adjust
-adjust_upper:
-	mov ctime+0, #0x00
-	mov a, ctime+1
-	inc a
-	da a
-	mov ctime+1, a
-done_adjust:
-	clr a
+	cjne a, #high(55), Timer0_ISR_done
+	setb bcd_flag
+	ljmp accumulate_loop_start 
 	
+done5:
+    Wait_Milli_Seconds(#0x01)
+    clr bcd_flag
+
+	mov a,ctime+0
+	cjne a,#0x99, adjust_lower
+	mov ctime+0, #0x00
+	mov a,ctime+1
+	add a,#0x01
+	da a
+	mov ctime+1,a 
+	ljmp done_adjust
+adjust_lower:
+    add a,#0x01
+    da a
+	mov ctime+0,a
+done_adjust:
+    clr a
+    
 	mov Count1ms+0, a
 	mov Count1ms+1, a
 	; Increment the current time counter
@@ -543,12 +554,12 @@ Hex_to_bcd_8bit:
 SendTemp:
 	mov dptr, #HexAscii 
 	
-	mov a, bcd+1
+	mov a, bcd+2
 	swap a
 	anl a, #0xf
 	movc a, @a+dptr
 	lcall putchar
-	mov a, bcd+1
+	mov a, bcd+2
 	anl a, #0xf
 	movc a, @a+dptr
 	lcall putchar
@@ -556,12 +567,12 @@ SendTemp:
 	mov a, #'.'
 	lcall putchar
 
-	mov a, bcd+0
+	mov a, bcd+1
 	swap a
 	anl a, #0xf
 	movc a, @a+dptr
 	lcall putchar
-	mov a, bcd+0
+	mov a, bcd+1
 	anl a, #0xf
 	movc a, @a+dptr
 	lcall putchar
@@ -588,7 +599,6 @@ SendString_L1:
 
 ;Function to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)
 Temp_Set:
-	push acc
 	mov a, ttemp+1
 	clr c 
 	cjne a, ctemp+1, carry_check
@@ -617,6 +627,7 @@ main:
     lcall Ports_Init
     lcall LCD_4BIT 
     lcall InitADC
+	lcall InitSerialPort
     lcall Init_SPI
     lcall CCU_Init
     lcall Timer0_Init
@@ -637,14 +648,13 @@ main:
 	setb reflow_flag
 	setb cooling_flag
 	setb finish_flag
-	mov adjust_state, #0
-	mov oven_state, #0
+	setb bcd_flag
 	mov ctemp, #0
    	mov rtemp, #0x17   ; minimum reflow  temperature
 	mov rtemp+1, #0x02;
 	mov stemp, #0x30   ; minimum soak temperature
 	mov stemp+1, #0x01
-	mov ctime, #0x00   ; current time
+	mov ctime+0, #0x00   ; current time
 	mov ctime+1, #0x00
 	mov stime, #0x60  ; soak time
 	mov stime+1, #0x00
@@ -660,15 +670,27 @@ Default_state:
     Send_Constant_String(#defaultstate)
     Set_Cursor(2,1)
     Send_Constant_String(#defaulstate2)
-    
-    jb button_state, Default_state
+	Set_Cursor(1,16)
+	WriteData(#' ')
+    Set_Cursor(2,16)
+	WriteData(#' ')
+    jb button_state, loop
 	Wait_Milli_Seconds(#50)	
-	jb button_state, Default_state
+	jb button_state, loop
 	jnb button_state, $
-    
+
+;check_button_start:   
+	;jb button_start, loop
+	;Wait_Milli_Seconds(#50)	
+	;jb button_start, loop 
+	;jnb button_state, $
+
+
     jb sw_start_stop, check_flag
-	WriteCommand(#0x01)      ; just got here but not going to start_oven 
-	ljmp start_oven
+	WriteCommand(#0x01)
+	mov ctime+0, #0x00
+	mov ctime+1, #0x00      ; just got here but not going to start_oven
+    ljmp start_oven
 
 check_flag:
 	WriteCommand(#0x01)
@@ -676,7 +698,8 @@ check_flag:
     jb soak_time_flag, to_soak_time
     jb reflow_temp_flag, to_reflow_temp
     jb reflow_time_flag, to_reflow_time
-    ljmp Default_state 
+    
+	ljmp loop 
 
 to_soak_temp:
     ljmp soak_temp
@@ -687,21 +710,22 @@ to_reflow_temp:
 to_reflow_time:
     ljmp reflow_time
 
+loop:
+    ljmp Default_state
+
 to_abort:
+    WriteCommand(#0x01)
     ljmp abort
 
-
-;---------------------------------;
-; Starts actual oven controller w ;
-; initialized values. Uncomment   ;
-; the lcall when thermocouple is  ;
-; plugged in                      ;
-;---------------------------------;
 start_oven:
-    	ljmp check_abort
-    	jb abort_flag, to_abort
-	;lcall accumulate_loop_start  
-	mov ctime, #0x67 	;some random value while thermocouple isnt plugged in
+    lcall check_abort
+    jb abort_flag, to_abort
+	 
+start_oven1:
+   	mov ctemp+0, bcd+1 	;store calculated temperature into x
+	mov ctemp+1, bcd+2
+
+    ;jb bcd_flag, skip_display
 	Set_Cursor(2,1) 	; display current time
 	Display_BCD(ctime+1)
 	Set_Cursor(2,3)
@@ -709,17 +733,21 @@ start_oven:
 	Set_Cursor(2,5)
 	WriteData(#'s')
 	
+    Set_Cursor(1,9)
+	WriteData(#' ')
 	Set_Cursor(1,10) ; display current time 
-	Display_BCD(ctemp+1)
+	Display_BCD(bcd+2)
 	Set_Cursor(1,12)
-	Display_BCD(ctemp+0)
+	Display_BCD(bcd+1)
 	Set_Cursor(1,14)
 	WriteData(#223) ;degrees character
 	Set_Cursor(1,15)
 	WriteData(#'C')
-
+	Set_Cursor(1,16)
+	WriteData(#' ')
+    
 check_stop_button: 
-    	jb button_updown, check_state_flag 
+    jb button_updown, check_state_flag 
 	Wait_Milli_Seconds(#50)	
 	jb button_updown, check_state_flag
 	jnb button_updown, $
@@ -751,9 +779,9 @@ to_reflow_state:
 to_cooling_state:
     ljmp cooling_state
 
-display_finish:
 	WriteCommand(#0x01)
-	Wait_Milli_Seconds(#2)	
+
+display_finish:
 	Set_Cursor(1,1)
 	Send_Constant_String(#finished)
 
@@ -766,8 +794,8 @@ display_finish:
     
     
 check_abort:
-    	mov a, ctemp+1
-    	cjne a, #0x02, abort_return
+    mov a, ctemp+1
+    cjne a, #0x02, abort_return
 	mov a, ctemp+0
 	clr c
 	subb a, #0x43
@@ -775,14 +803,14 @@ check_abort:
 	;cjne a, #0x43, abort_return
 	setb abort_flag
 abort_return:		
-		ljmp start_oven 
+		ret 
 abort:
-    	Set_Cursor(1,1)
+    Set_Cursor(1,1)
 	Send_Constant_String(#displayabort)
-   	Set_Cursor(2,1)
-    	Send_Constant_String(#defaulstate2)
-    	clr POWER_OUT
-    	jb button_reset, abort; if the 'button_updown' button is not pressed skip
+    Set_Cursor(2,1)
+    Send_Constant_String(#displayabort2)
+    clr POWER_OUT
+    jb button_reset, abort; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb button_reset, abort  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_reset, $
@@ -793,11 +821,11 @@ abort:
 accumulate_loop_start:
     ; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
 	Load_x(0)
-    mov x+0, AD0DAT0
+    mov x+0, AD0DAT3
     mov R7, #255
     lcall Wait10us
 accumulate_loop:
-    mov y+0, AD0DAT0
+    mov y+0, AD0DAT3
     mov y+1, #0
     mov y+2, #0
     mov y+3, #0
@@ -818,18 +846,51 @@ accumulate_loop:
 	Load_Y(27300)
 	lcall sub32
 	
-	lcall hex2bcd
-	mov ctemp+0, x+0 	;store calculated temperature into x
-	mov ctemp+1, x+1
+	;lcall hex2bcd
+
+	forever_loop_2:	
+	mov R4, x+0
+	mov R5, x+1
+
+	Load_x(0)
+    mov x+0, AD0DAT0
+
+	Load_Y(330)
+	lcall mul32
+	Load_Y(255)
+	lcall div32
+	Load_Y(74)
+	lcall mul32
+	Load_Y(0)
+	mov a,#0
+	mov a, R4
+	mov y+0,a
+	mov a,#0
+	mov a, R5
+	mov y+1,a
+	lcall add32
+    
+
+
+    lcall hex2bcd
+	setb bcd_flag
+	lcall SendTemp
+	clr bcd_flag
+    
+	;mov ctemp+0, x+0 	;store calculated temperature into x
+	;mov ctemp+1, x+1
 	;mov ctemp+2, x+2
-	lcall SendTemp ; Send to PUTTy, with 2 decimal digits to show that it actually works
-	lcall Wait1S
-    ret
+	
+	; Send to PUTTy, with 2 decimal digits to show that it actually works
+	;lcall Wait1S
+ljmp done5
 
 
 preheat_state:
     Set_Cursor(1,1)
+	jb bcd_flag, skip_display_1
 	Send_Constant_String(#displaystate1)
+skip_display_1:
 	;mov a, stemp ; a equals setting temp lower bit
     	;clr c 
 	;subb a, ctemp
@@ -879,7 +940,7 @@ done_ramp_to_reflow:
 	ljmp start_oven
 
 reflow_state:
-    	Set_Cursor(1,1)
+    Set_Cursor(1,1)
 	Send_Constant_String(#displaystate4)
 	mov ttemp+0, #0x30
 	mov ttemp+1, #0x02
@@ -890,28 +951,31 @@ turn_off_power:
 	ljmp start_oven
 
 cooling_state:
-    	Set_Cursor(1,1)
+    Set_Cursor(1,1)
 	Send_Constant_String(#displaystate5)
-    	mov ttemp+0, #0x40
+    mov ttemp+0, #0x30
 	mov ttemp+1, #0x00
 	lcall Temp_Set
-    	mov a, ctemp+1
-    	cjne a, ttemp+1, to_cooling 
+    mov a, ctemp+1
+    cjne a, ttemp+1, to_cooling 
 	mov a, ctemp+0
-	subb a, ttemp+0 	;if ctemp larger, not cool enough, carry not set
-	jnc to_cooling
+	cjne a, ttemp+0, to_cooling
 
 	clr cooling_flag
-	sjmp safe_to_touch 
+	ljmp start_oven 
 to_cooling:
-    	ljmp start_oven
+    ljmp start_oven
 
-safe_to_touch:
-	ljmp display_finish 		;stop oven when cool enough
-    
+
+
+	
+	
 
     
     
+    
+    
+
     
 
 
