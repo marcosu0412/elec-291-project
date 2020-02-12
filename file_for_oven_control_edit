@@ -220,13 +220,9 @@ Inc_Done:
 	cjne a, #low(55), Timer0_ISR_done ; Warning: this instruction changes the carry flag!
 	mov a, Count1ms+1
 	cjne a, #high(55), Timer0_ISR_done
-	setb bcd_flag
 	ljmp accumulate_loop_start 
 	
 done5:
-    Wait_Milli_Seconds(#0x01)
-    clr bcd_flag
-
 	mov a,ctime+0
 	cjne a,#0x99, adjust_lower
 	mov ctime+0, #0x00
@@ -234,6 +230,16 @@ done5:
 	add a,#0x01
 	da a
 	mov ctime+1,a 
+	
+	jb preheat_flag, done_adjust
+	jnb soak_flag, done1
+	mov a, tt+0
+	cjne a, #0x00, dec_tt
+	mov a, tt+1
+	cjne a, #0x01, done2 
+	mov tt+1,#0x00
+	mov tt+0,#0x99
+	
 	ljmp done_adjust
 adjust_lower:
     add a,#0x01
@@ -251,16 +257,8 @@ donee:
 	reti
 done2:
 	clr soak_flag
-	ljmp donee
+	ljmp done_adjust
 Timer0_ISR_done:
-	jb preheat_flag, donee
-	jnb soak_flag, done1
-	mov a, tt+0
-	cjne a, #0x00, dec_tt
-	mov a, tt+1
-	cjne a, #0x01, done2 
-	mov tt+1,#0x00
-	mov tt+0,#0x99
 	ljmp donee
 dec_tt:
 	dec a
@@ -268,8 +266,8 @@ dec_tt:
 	mov tt+0,a
 	ljmp donee
 done1:
-	jb ramp_to_peak_flag, donee
-	jnb reflow_flag, donee
+	jb ramp_to_peak_flag, done_adjust
+	jnb reflow_flag, done_adjust
 	mov a, tt+0
 	cjne a, #0x01, done3a 
 	ljmp done3
@@ -283,17 +281,17 @@ done3b:
 	dec a 
 	da a 
 	mov tt+0,a 
-	ljmp donee
+	ljmp done_adjust
 done3:
-    jb peak_flag, done4
+    	jb peak_flag, done4
 	setb peak_flag
 	mov tt+0,rtime+0
 	mov tt+1, #0x0
 	clr POWER_OUT
-	ljmp donee
+	ljmp done_adjust
 done4:
 	clr reflow_flag
-	ljmp donee
+	ljmp done_adjust
 
 ;---------------------------------;
 ; Initializing CCU                ;
