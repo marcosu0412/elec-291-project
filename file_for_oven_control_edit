@@ -69,7 +69,7 @@ rtemp:		ds 2   ; reflow  temperature
 stemp:		ds 2   ; soak temperature
 rtime:		ds 2   ; reflow time
 stime:		ds 2   ; soak time
-tt:         ds 1 ; temporary variable to hold stime 
+tt:         ds 2 ; temporary variable to hold stime 
 ttemp: 	    ds 2 ; temporary temperature
 
 adjust_state: ds 1
@@ -219,8 +219,32 @@ Inc_Done:
 	mov Count1ms+0, a
 	mov Count1ms+1, a
 	; Increment the current time counter
-
+donee:
+	pop psw
+	pop acc
+	reti
+done2:
+	clr soak_flag
+	ljmp donne
 Timer0_ISR_done:
+	jb preheat_flag, done1
+	jnb soak_flag, done1
+	mov a, tt+0
+	cjne a, #0x00, dec_tt
+	mov a, tt+1
+	cjne a, #0x01, done2 
+	mov tt+1,#0x00
+	mov tt+0,#0x99
+	ljmp donne
+dec_tt:
+	dec a
+	da a
+	mov tt+0,a
+	ljmp donee
+done1:
+
+
+
 	pop psw
 	pop acc
 	reti
@@ -529,10 +553,11 @@ SendString_L1:
 
 ;Function to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)
 Temp_Set:
-	push acc
 	mov a, ttemp+1
+	clr c 
 	cjne a, ctemp+1, carry_check
 	mov a, ttemp
+	clr c 
 	cjne a, ctemp, carry_check
 	pop acc				;if current temp and desired temp are the same, do nothing
 	ret
@@ -540,12 +565,10 @@ Carry_check:
 	jc Power_off 	;if ctemp larger than desired temp, turn off power
 	sjmp Power_on	;else turn on power
 Power_off:
-    	clr POWER_OUT 
-	pop acc
+    clr POWER_OUT 
 	ret
 Power_on:
 	setb POWER_OUT
-	pop acc
 	ret
 ;---------------------------------;
 ; Main program. Includes hardware ;
@@ -577,6 +600,7 @@ main:
 	setb ramp_to_peak_flag
 	setb reflow_flag
 	setb cooling_flag
+	setb finish_flag
 	mov adjust_state, #0
 	mov oven_state, #0
 	mov ctemp, #0
@@ -647,13 +671,17 @@ start_oven:
 	Set_Cursor(1,15)
 	Display_BCD(#'C')
 
-check_reset_button: 
-    jb button_reset, check_state_flag 
+check_stop_button: 
+    jb button_updown, check_state_flag 
 	Wait_Milli_Seconds(#50)	
-	jb button_reset, check_state_flag
-	jnb button_reset, $
-	 
-  	ljmp main 
+	jb button_updown, check_state_flag
+	jnb button_updown, $
+	
+	jb preheat_flag, check_state_flag 
+	jb soak_flag, check_state_flag 
+	jb ramp_to_peak_flag, check_state_flag 
+	clr POWER_OUT
+	clr reflow_flag
 
 check_state_flag:
 	jb preheat_flag, preheat_state
@@ -689,7 +717,61 @@ abort:
 	clr abort_flag
 	ljmp Default_state
 
-state1:
+preheat_state:
+    Set_Cursor(1,1)
+	Send_Constant_String(#displaystate1)
+	;mov a, stemp ; a equals setting temp lower bit
+    	;clr c 
+	;subb a, ctemp
+	;jc state1_2
+	mov ttemp+0, stemp+0
+	mov ttemp+1,stemp+1
+	lcall Temp_Set
+	mov a, stemp+1
+	cjne a, ctemp+1, state1_2
+	mov a, stemp
+	cjne a, ctemp, state1_2
+    ljmp start_oven 
+state1_2:
+	jc done_ramp_to_soak
+    ljmp start_oven
+done_ramp_to_soak:
+    clr preheat_flag
+	mov tt+0, stime+0
+	mov tt+1, stime+1 
+	ljmp start_oven
+
+
+soak_state:
+    Set_Cursor(1,1)
+	Send_Constant_String(#displaystate2)
+	lcall Temp_Set
+    ljmp start_oven
+
+ramp_to_peak_state:
+    Set_Cursor(1,1)
+	Send_Constant_String(#displaystate3)
+	mov ttemp+0, rtemp+0
+	mov ttemp+1, rtemp+1
+	lcall Temp_Set
+	mov a, rtemp+1
+	cjne a, ctemp+1, state3_2
+	mov a, rtemp
+	cjne a, ctemp, state3_2    
+	ljmp start_oven 
+state3_2:
+	jc done_ramp_to_reflow
+    ljmp start_oven
+done_ramp_to_reflow:
+    clr ramp_to_peak_flag
+	mov tt+0, rtime+0 
+	mov tt+1, #0x00
+	ljmp start_oven
+
+reflow_state:
+    
+    
+
     
 
 
