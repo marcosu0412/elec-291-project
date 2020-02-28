@@ -1,9 +1,5 @@
 ; Marco su
 ; Seamus Munkholm
-; Nick Zhao
-; Sean Mcneil
-; Matt Tam
-; Marcus Wong
 
 $NOLIST
 $MOD9351
@@ -75,15 +71,14 @@ rtime:		ds 2   ; reflow time
 stime:		ds 2   ; soak time
 tt:         ds 2 ; temporary variable to hold stime 
 ttemp: 	    ds 2 ; temporary temperature
-tt1:         ds 2 
+
 adjust_state: ds 1
 oven_state: ds 1
-speak_delay:  ds 1
 
 x: ds 4 ;for use in math32
 y: ds 4
 bcd: ds 5
-FSMState: ds 1
+
 
 ;-------------------------------------------;
 ;                  Flags                    ;
@@ -107,7 +102,7 @@ cooling_flag:           dbit 1
 finish_flag:            dbit 1 
 peak_flag:              dbit 1
 bcd_flag: 				dbit 1
-Sec5:                   dbit 1
+
  ;-------------------------------------------;
 ;         Pins and Constant Strings         ;
 ;-------------------------------------------;
@@ -125,16 +120,16 @@ LCD_D7 equ P1.6
 ;---------------------------------;
 sw_start_stop equ P2.6
 ;sw_updown     equ P2.1
-button_updown equ P3.1
+button_updown equ P0.2
 button_state  equ P3.0
 button_reset  equ P0.3
 button_start  equ P2.6
-SOUND         EQU P2.7
+
 ;---------------------------------;
 ; Temperature and Power		  ;
 ;---------------------------------;
 TEMP_IN 	equ P1.7
-POWER_OUT 	equ P0.2
+POWER_OUT 	equ P0.0
 
 ;---------------------------------;
 ; Strings		  ;
@@ -197,7 +192,7 @@ Timer0_Init:
 	mov TL0, #low(TIMER0_RELOAD)
 	; Enable the timer and interrupts
     setb ET0  ; Enable timer 0 interrupt
-    ;setb TR0  ; Start timer 0
+    setb TR0  ; Start timer 0
 	ret
 
 ;---------------------------------;
@@ -222,18 +217,12 @@ Timer0_ISR:
 Inc_Done:
 	; Check if full second has passed
 	mov a, Count1ms+0
-	cjne a, #low(55), donee ; Warning: this instruction changes the carry flag!
+	cjne a, #low(55), Timer0_ISR_done ; Warning: this instruction changes the carry flag!
 	mov a, Count1ms+1
-	cjne a, #high(55), donee
-	setb bcd_flag
+	cjne a, #high(55), Timer0_ISR_done
 	ljmp accumulate_loop_start 
+	
 done5:
-	;cpl Sec5
-
-
-    Wait_Milli_Seconds(#0x01)
-    clr bcd_flag
-
 	mov a,ctime+0
 	cjne a,#0x99, adjust_lower
 	mov ctime+0, #0x00
@@ -241,88 +230,68 @@ done5:
 	add a,#0x01
 	da a
 	mov ctime+1,a 
-	ljmp done_adjust
 adjust_lower:
-    add a,#0x01
-    da a
-	mov ctime+0,a
+    	add a,#0x01
+    	da a
+	mov ctime+0,a	
+	
+	jb preheat_flag, done_adjust
+	jnb soak_flag, done1
+	mov a, tt+0
+	cjne a, #0x00, dec_tt
+	mov a, tt+1
+	cjne a, #0x01, done2 
+	mov tt+1,#0x00
+	mov tt+0,#0x99
+	
+	ljmp done_adjust
+
 done_adjust:
-    clr a
-    
+    	clr a
 	mov Count1ms+0, a
 	mov Count1ms+1, a
 	; Increment the current time counter
-	ljmp Timer0_ISR_done
-
-done2:
-	clr soak_flag
-	ljmp donee
 donee:
 	pop psw
 	pop acc
 	reti
+done2:
+	clr soak_flag
+	ljmp done_adjust
 Timer0_ISR_done:
-	jb preheat_flag, donee
-	jnb soak_flag, done1
-	mov a, tt1+0
-
-	cjne a, #0x99, dec_tt
-	mov a, #0x0
-	mov tt1+0, a
-	mov a, tt+1
-	add a,#0x01
-	da a
-	mov tt1+1,a
-	;mov tt+1,#0x00
-	;mov tt+0,#0x99
-	;Set_Cursor(2,7)
-;	Display_BCD(tt+1)
-;	Set_Cursor(2,9)
-;	Display_BCD(tt+0)
 	ljmp donee
 dec_tt:
-	mov a, tt1+0
-	add a, #0x01
+	dec a
 	da a
-	mov tt1+0,a
+	mov tt+0,a
 	ljmp donee
 done1:
-	jb ramp_to_peak_flag, donee
-	jnb reflow_flag, donee
+	jb ramp_to_peak_flag, done_adjust
+	jnb reflow_flag, done_adjust
 	mov a, tt+0
-	cjne a, tt1+0, done3a 
+	cjne a, #0x01, done3a 
 	ljmp done3
 done3a:
 	mov a, tt+0
-	add a, #0x1
-	da a
-	cjne a, tt1+0, done3b
+	cjne a, #0x00, done3b
 	ljmp done3	
 done3b:
-	mov a, tt1+0
-	add a, #0x01 
+	dec a 
 	da a
-	add a, #0x01
+	dec a 
 	da a 
-	mov tt1+0,a 
-	ljmp donee
+	mov tt+0,a 
+	ljmp done_adjust
 done3:
-    jb peak_flag, done4
+    	jb peak_flag, done4
 	setb peak_flag
-	mov tt1+0,#0x00
-	mov tt1+1, #0x00
-	ljmp donee
-done4:
+	mov tt+0,rtime+0
+	mov tt+1, #0x0
 	clr POWER_OUT
-	Set_Cursor(2,14)
-	WriteData(#'O')
-	Set_Cursor(2,15)
-	WriteData(#'F')
-	Set_Cursor(2,16)
-	WriteData(#'F')
-	
+	ljmp done_adjust
+done4:
 	clr reflow_flag
-	ljmp donee
+	ljmp done_adjust
 
 ;---------------------------------;
 ; Initializing CCU                ;
@@ -381,250 +350,6 @@ CCU_ISR_Done:
 	pop acc
 	clr P2.6
 	reti
-
-
-; Sounds we need in the SPI flash: 0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 12; 13; 14; 15; 16; 17; 18; 19; 20; 30; 40; 50; minutes; seconds;
-; Approximate index of sounds in file 'stop_watch.wav'
-; This was generated using: computer_sender -Asw_index.asm -S2000 stop_watch.wav
-; Approximate index of sounds in file 'uwu.wav'
-; Approximate index of sounds in file 'fuckme7.wav'
-sound_index:
-    db 0x00, 0x00, 0x2d ; 0 
-    db 0x00, 0x31, 0x88 ; 1 
-    db 0x00, 0x6f, 0xfe ; 2 
-    db 0x00, 0xad, 0x21 ; 3 
-    db 0x00, 0xf1, 0x8b ; 4 
-    db 0x01, 0x37, 0x8c ; 5 
-    db 0x01, 0x81, 0xd2 ; 6 
-    db 0x01, 0xcf, 0x06 ; 7 
-    db 0x02, 0x1b, 0x0e ; 8 
-    db 0x02, 0x50, 0xff ; 9 
-    db 0x02, 0x98, 0xb2 ; 10 
-    db 0x02, 0xdd, 0x06 ; 11 
-    db 0x03, 0x2b, 0x28 ; 12 
-    db 0x03, 0x78, 0x79 ; 13 
-    db 0x03, 0xc8, 0x78 ; 14 
-    db 0x04, 0x1f, 0xe2 ; 15 
-    db 0x04, 0x73, 0xea ; 16 
-    db 0x04, 0xcf, 0x6d ; 17 
-    db 0x05, 0x34, 0x7b ; 18 
-    db 0x05, 0x7f, 0xca ; 19 
-    db 0x05, 0xdb, 0x2d ; 20 
-    db 0x06, 0x27, 0xad ; 21 
-    db 0x06, 0x6a, 0xaf ; 22 
-    db 0x06, 0xb3, 0x94 ; 23 
-    db 0x06, 0xfb, 0x69 ; 24 
-    db 0x07, 0x51, 0xf3 ; 25 
-    db 0x07, 0xa9, 0xac ; 26 
-    db 0x07, 0xeb, 0x4c ; 27 
-    db 0x08, 0x38, 0x9c ; 28 
-    db 0x08, 0x88, 0x9e ; 29 
-    db 0x08, 0xfe, 0xb1 ; 30 
-    db 0x09, 0x7d, 0x22 ; 31 
-    db 0x09, 0xe9, 0x62 ; 32 
-    db 0x0a, 0x2b, 0x40 
-
-; Size of each sound in 'sound_index'
-Size_length:
-    db 0x00, 0x31, 0x5b ; 0 
-    db 0x00, 0x3e, 0x76 ; 1 
-    db 0x00, 0x3d, 0x23 ; 2 
-    db 0x00, 0x44, 0x6a ; 3 
-    db 0x00, 0x46, 0x01 ; 4 
-    db 0x00, 0x4a, 0x46 ; 5 
-    db 0x00, 0x4d, 0x34 ; 6 
-    db 0x00, 0x4c, 0x08 ; 7 
-    db 0x00, 0x35, 0xf1 ; 8 
-    db 0x00, 0x47, 0xb3 ; 9 
-    db 0x00, 0x44, 0x54 ; 10 
-    db 0x00, 0x4e, 0x22 ; 11 
-    db 0x00, 0x4d, 0x51 ; 12 
-    db 0x00, 0x4f, 0xff ; 13 
-    db 0x00, 0x57, 0x6a ; 14 
-    db 0x00, 0x54, 0x08 ; 15 
-    db 0x00, 0x5b, 0x83 ; 16 
-    db 0x00, 0x65, 0x0e ; 17 
-    db 0x00, 0x4b, 0x4f ; 18 
-    db 0x00, 0x5b, 0x63 ; 19 
-    db 0x00, 0x4c, 0x80 ; 20 
-    db 0x00, 0x43, 0x02 ; 21 30
-    db 0x00, 0x48, 0xe5 ; 22 40
-    db 0x00, 0x47, 0xd5 ; 23 50
-    db 0x00, 0x56, 0x8a ; 24 60
-    db 0x00, 0x57, 0xb9 ; 25 70
-    db 0x00, 0x41, 0xa0 ; 26 80
-    db 0x00, 0x4d, 0x50 ; 27 90
-    db 0x00, 0x50, 0x02 ; 28 hundred
-    db 0x00, 0x76, 0x13 ; 29 The temp is
-    db 0x00, 0x7e, 0x71 ; 30 Degrees celsius
-    db 0x00, 0x6c, 0x40 ; 31 fucking gay
-    db 0x00, 0x41, 0xde ; 32 
-
-
-
-; The sound and its length from the two tables above is passed in the accumulator.
-Play_Sound_Using_Index:
-	setb SOUND ; Turn speaker on
-	clr TMOD20 ; Stop the CCU from playing previous request
-	setb FLASH_CE
-	
-	; There are three bytes per row in our tables, so multiply index by three
-	mov b, #3
-	mul ab
-	mov R0, a ; Make a copy of the index*3
-	
-	clr FLASH_CE ; Enable SPI Flash
-	mov a, #READ_BYTES
-	lcall Send_SPI
-	; Set the initial position in memory of where to start playing
-	mov dptr, #sound_index
-	mov a, R0
-	movc a, @a+dptr
-	lcall Send_SPI
-	inc dptr
-	mov a, R0
-	movc a, @a+dptr
-	lcall Send_SPI
-	inc dptr
-	mov a, R0
-	movc a, @a+dptr
-	lcall Send_SPI
-	; Now set how many bytes to play
-	mov dptr, #Size_Length
-	mov a, R0
-	movc a, @a+dptr
-	mov w+2, a
-	inc dptr
-	mov a, R0
-	movc a, @a+dptr
-	mov w+1, a
-	inc dptr
-	mov a, R0
-	movc a, @a+dptr
-	mov w+0, a
-	
-	mov a, #0x00 ; Request first byte to send to DAC
-	lcall Send_SPI
-	
-	setb TMOD20 ; Start playback by enabling CCU timer
-
-	ret
-
-
-;---------------------------------------------------------------------------------;
-; This is the FSM that plays minutes and seconds after the STOP button is pressed ;
-; The state diagram of this FSM is available as 'Stop_Watch_FSM.pdf'              ;
-;---------------------------------------------------------------------------------;
-FSM_Start:
-	jb Sec5, state_3 
-	;mov FSMState, #0
-	;cjne a, #0, State_3
-	;clr Sec5
-	ret
-State_3:
-	mov a, #29 ;"Temperature currently:x"
-	lcall Play_Sound_Using_Index
-	mov FSMState, #3
-State_3D:
-	mov a, FSMState
-	cjne a, #3, State_4
-	jb TMOD20, State_3D
-	mov FSMState, #4
-	sjmp State_3D
-	;hundreds place check
-State_4:
-	mov a, BCD+1
-	cjne a, #0, State_5
-	ljmp State_7
-	;play hundreds place
-State_5: 
-	mov a, BCD+1
-	lcall Play_Sound_Using_Index
-	mov FSMState, #5
-State_5D:
-	mov a,FSMState
-	cjne a, #5, State_6
-	jb TMOD20, State_5D
-	mov FSMState, #6
-	sjmp State_5D
-State_6:
-	mov a,#28 ;100 deg call
-	lcall Play_Sound_Using_Index
-	mov FSMState, #6
-State_6D:
-	mov a, FSMState
-	cjne a, #6, State_7
-	jb TMOD20, State_6D
-	mov FSMState, #7
-	sjmp State_6D
-State_7:
-	mov a, BCD
-	swap a
-	anl a, #0x0F
-	cjne a, #1, State_9
-State_8:
-	mov a, BCD
-	lcall Play_Sound_Using_Index
-	mov FSMState, #8
-State_8D:
-	mov a, FSMState
-	cjne a, #8, State_12
-	jb TMOD20, State_8D
-	mov FSMState, #9
-	sjmp State_8D	
-State_9:
-	mov a, BCD
-	swap a
-	anl a, #0x0F
-	cjne a, #0, State_11
-State_10:
-	mov a, BCD
-	anl a, #0x0F
-	lcall Play_Sound_Using_Index	
-	mov FSMState, #10
-State_10D:
-	mov a, FSMState
-	cjne a, #10, State_12
-	jb TMOD20, State_10D
-	mov FSMState, #12
-	sjmp State_10D
-State_11:
-	mov a, BCD
-	swap a
-	anl a, #0x0F
-	add a, #18
-	lcall Play_Sound_Using_Index
-	mov FSMState, #11
-State_11D:
-	mov a, FSMState
-	cjne a, #11, State_13
-	jb TMOD20, State_11D
-	mov FSMState, #12
-	sjmp State_11D
-State_12:
-	mov a, #30 ;Celsius call
-	lcall Play_Sound_Using_Index
-	mov FSMState, #12
-State_12D:
-	mov a, FSMState
-	cjne a, #12, DONE
-	jb TMOD20, State_12D
-	mov FSMState, #0
-	sjmp State_12D
-State_13:
-	mov a, BCD
-	anl a, #0x0F
-	cjne a, #0, State_10
-	ljmp State_12
-DONE:
-	clr Sec5
-	mov FSMState, #0
-	ret
-; End of FMS that plays minutes and seconds
-
-
-
-
 
 ;---------------------------------;
 ; Initial configuration of ports. ;
@@ -837,6 +562,9 @@ SendTemp:
 	movc a, @a+dptr
 	lcall putchar
 
+	mov a, #'.'
+	lcall putchar
+
 	mov a, bcd+1
 	swap a
 	anl a, #0xf
@@ -847,6 +575,8 @@ SendTemp:
 	movc a, @a+dptr
 	lcall putchar
 	
+	mov a, #'\r'
+	lcall putchar
 	mov a, #'\n'
 	lcall putchar	
 	ret
@@ -867,14 +597,13 @@ SendString_L1:
 
 ;Function to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)
 Temp_Set:
-    push acc 
 	mov a, ttemp+1
 	clr c 
 	cjne a, ctemp+1, carry_check
 	mov a, ttemp
 	clr c 
-	cjne a, ctemp, carry_check	
-	pop acc 			;if current temp and desired temp are the same, do nothing
+	cjne a, ctemp, carry_check
+	pop acc				;if current temp and desired temp are the same, do nothing
 	ret
 Carry_check:
 	jc Power_off 	;if ctemp larger than desired temp, turn off power
@@ -887,8 +616,7 @@ Power_off:
 	Set_Cursor(2,16)
 	WriteData(#'F')
     clr POWER_OUT 
-	pop acc 
-	ret 
+	ret
 Power_on:
 	Set_Cursor(2,14)
 	WriteData(#'O')
@@ -897,8 +625,7 @@ Power_on:
 	Set_Cursor(2,16)
 	WriteData(#' ')
 	setb POWER_OUT
-	pop acc
-	ret 
+	ret
 ;---------------------------------;
 ; Main program. Includes hardware ;
 ; initialization and 'forever'    ;
@@ -920,9 +647,7 @@ main:
 	setb EA   ; Enable Global interrupts
     ; Initialize variables
 	clr abort_flag
-	clr peak_flag
     clr mf
-	clr POWER_OUT
     setb soak_temp_flag
     setb soak_time_flag
     setb reflow_temp_flag
@@ -934,8 +659,6 @@ main:
 	setb cooling_flag
 	setb finish_flag
 	setb bcd_flag
-	mov speak_delay, #0x00
-	clr Sec5
 	mov ctemp, #0
    	mov rtemp, #0x17   ; minimum reflow  temperature
 	mov rtemp+1, #0x02;
@@ -943,22 +666,16 @@ main:
 	mov stemp+1, #0x01
 	mov ctime+0, #0x00   ; current time
 	mov ctime+1, #0x00
-	mov stime+0, #0x60  ; soak time
+	mov stime, #0x60  ; soak time
 	mov stime+1, #0x00
 	mov rtime, #0x30   ; reflow time   
 	mov rtime+1, #0x00
-	mov tt+0, #0x00
-	mov tt+1, #0x00
-	mov tt1+0, #0x00
-	mov tt1+1, #0x00
-	mov x+0, #0x0
-	mov x+1, #0x0
+	mov tt, #0x00
     ljmp Default_state
 	; After initialization the program stays in this 'forever' loop
 	   ;starts off in default display screen until button pressed
     
 Default_state:
-	
     Set_Cursor(1,1)
     Send_Constant_String(#defaultstate)
     Set_Cursor(2,1)
@@ -967,25 +684,24 @@ Default_state:
 	WriteData(#' ')
     Set_Cursor(2,16)
 	WriteData(#' ')
-   
-    jb button_state, param_change
+    jb button_state, loop
 	Wait_Milli_Seconds(#50)	
-	jb button_state, param_change
+	jb button_state, loop
 	jnb button_state, $
-	
-	setb TR0
-    WriteCommand(#0x01)
+
+;check_button_start:   
+	;jb button_start, loop
+	;Wait_Milli_Seconds(#50)	
+	;jb button_start, loop 
+	;jnb button_state, $
+
+
+    jb sw_start_stop, check_flag
+	WriteCommand(#0x01)
 	mov ctime+0, #0x00
 	mov ctime+1, #0x00      ; just got here but not going to start_oven
-	Wait_Milli_Seconds(#50)
     ljmp start_oven
 
-param_change:	  
-    jb button_updown, loop
-	Wait_Milli_Seconds(#50)	
-	jb button_updown, loop
-	jnb button_updown, $
-    
 check_flag:
 	WriteCommand(#0x01)
     jb soak_temp_flag, to_soak_temp
@@ -1012,11 +728,9 @@ to_abort:
     ljmp abort
 
 start_oven:
-	lcall FSM_Start
     lcall check_abort
-    jb abort_flag, to_abort
-	 
-start_oven1:
+start_oven1:    
+	jb abort_flag, to_abort
    	mov ctemp+0, bcd+1 	;store calculated temperature into x
 	mov ctemp+1, bcd+2
 
@@ -1040,13 +754,6 @@ start_oven1:
 	Set_Cursor(1,16)
 	WriteData(#' ')
     
-	jb button_reset, check_stop_button
-	Wait_Milli_Seconds(#50)	
-	jb button_reset, check_stop_button
-	jnb button_reset, $
-     
-	ljmp main
-
 check_stop_button: 
     jb button_updown, check_state_flag 
 	Wait_Milli_Seconds(#50)	
@@ -1068,23 +775,6 @@ check_state_flag:
 	jb ramp_to_peak_flag, to_ramp_to_peak_state
 	jb reflow_flag, to_reflow_state
 	jb cooling_flag, to_cooling_state
-     
-    	WriteCommand(#0x01)
-
-display_finish:
-    clr TR0
-	clr POWER_OUT
-	Set_Cursor(1,1)
-	Send_Constant_String(#finished)
-
-	;jb button_reset, display_finish
-	;Wait_Milli_Seconds(#50)	
-	;jb button_reset, display_finish
-;	jnb button_reset, $
-    
-	sjmp $
-
-	ljmp main
 
 to_preheat_state:
     ljmp preheat_state
@@ -1097,8 +787,18 @@ to_reflow_state:
 to_cooling_state:
     ljmp cooling_state
 
+	WriteCommand(#0x01)
 
+display_finish:
+	Set_Cursor(1,1)
+	Send_Constant_String(#finished)
 
+	jb button_reset, display_finish
+	Wait_Milli_Seconds(#50)	
+	jb button_updown, display_finish
+	jnb button_reset, $
+
+	ljmp main
     
     
 check_abort:
@@ -1115,11 +815,10 @@ abort_return:
 abort:
    	Set_Cursor(1,1)
 	Send_Constant_String(#displayabort)
-    Set_Cursor(2,1)
-    Send_Constant_String(#displayabort2)
-    clr POWER_OUT
-    
-	jb button_reset, abort; if the 'button_updown' button is not pressed skip
+    	Set_Cursor(2,1)
+    	Send_Constant_String(#displayabort2)
+    	clr POWER_OUT
+    	jb button_reset, abort; if the 'button_updown' button is not pressed skip
 	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
 	jb button_reset, abort  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
 	jnb button_reset, $
@@ -1191,7 +890,7 @@ ljmp done5
 
 
 preheat_state:
-    Set_Cursor(1,1)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate1)
 	;mov a, stemp ; a equals setting temp lower bit
     	;clr c 
@@ -1204,33 +903,25 @@ preheat_state:
 	cjne a, ctemp+1, state1_2
 	mov a, stemp
 	cjne a, ctemp, state1_2
-    ljmp start_oven 
+    	ljmp start_oven 
 state1_2:
 	jc done_ramp_to_soak
-    ljmp start_oven
+    	ljmp start_oven
 done_ramp_to_soak:
-    clr preheat_flag
+    	clr preheat_flag
 	mov tt+0, stime+0
 	mov tt+1, stime+1 
 	ljmp start_oven
 
 
 soak_state:
-    Set_Cursor(1,1)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate2)
 	lcall Temp_Set
-	mov a, tt1+0
-	cjne a, tt+0, bruh
-	clr soak_flag
-	mov tt+0,rtime+0
-	mov tt+1,#0x00
-	mov tt1+0, #0x00
-	mov tt1+1, #0x00
-bruh:
-    ljmp start_oven
+    	ljmp start_oven
 
 ramp_to_peak_state:
-    Set_Cursor(1,1)
+    	Set_Cursor(1,1)
 	Send_Constant_String(#displaystate3)
 	mov ttemp+0, rtemp+0
 	mov ttemp+1, rtemp+1
@@ -1242,9 +933,9 @@ ramp_to_peak_state:
 	ljmp start_oven 
 state3_2:
 	jc done_ramp_to_reflow
-    ljmp start_oven
+    	ljmp start_oven
 done_ramp_to_reflow:
-    clr ramp_to_peak_flag
+    	clr ramp_to_peak_flag
 	mov tt+0, rtime+0 
 	mov tt+1, #0x00
 	ljmp start_oven
@@ -1258,24 +949,23 @@ reflow_state:
 	lcall Temp_Set
 	ljmp start_oven
 turn_off_power:
-    clr POWER_OUT 
 	ljmp start_oven
 
 cooling_state:
-    
-    ;mov ttemp+0, #0x30
-	;mov ttemp+1, #0x00
-	;lcall Temp_Set
-	clr POWER_OUT
-    ;mov a, ctemp+1
-    ;cjne a, ttemp+1, to_cooling 
-	;mov a, ctemp+0
-	;cjne a, ttemp+0, to_cooling
-	;clr cooling_flag
-	Wait_Milli_Seconds (#50)
-	Set_Cursor(1,1)
+    Set_Cursor(1,1)
 	Send_Constant_String(#displaystate5)
-	ljmp start_oven
+    mov ttemp+0, #0x30
+	mov ttemp+1, #0x00
+	lcall Temp_Set
+    mov a, ctemp+1
+    cjne a, ttemp+1, to_cooling 
+	mov a, ctemp+0
+	cjne a, ttemp+0, to_cooling
+
+	clr cooling_flag
+	ljmp start_oven 
+to_cooling:
+    ljmp start_oven
 
 
 
