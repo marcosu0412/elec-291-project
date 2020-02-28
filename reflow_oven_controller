@@ -1,0 +1,1486 @@
+; Marco su
+; Seamus Munkholm
+; Nick Zhao
+; Sean Mcneil
+; Matt Tam
+; Marcus Wong
+
+$NOLIST
+$MOD9351
+$LIST
+
+org 0x0000
+    ljmp main
+
+; Timer/Counter 0 overflow interrupt vector
+org 0x000B
+	ljmp Timer0_ISR
+
+
+; Timer/Counter 2 overflow interrupt vector
+org 0x005B
+	ljmp CCU_ISR	
+
+
+
+$NOLIST
+$include(LCD_4bit.inc)
+$LIST
+
+$NOLIST
+$include(math32.inc)
+$LIST
+
+;-------------------------------------------;
+;               Constants                   ;
+;-------------------------------------------;
+CLK                 EQU 14746000 ; Microcontroller system crystal frequency in Hz
+TIMER0_RATE         EQU 1000     ; 1000Hz, for a timer tick of 1ms
+TIMER0_RELOAD       EQU ((65536-(CLK/(12*CCU_RATE))))
+CCU_RATE 			EQU 22050
+CCU_RELOAD 			EQU ((65536-(CLK/(2*CCU_RATE))))
+PEAK_TEMPERATURE    EQU 260
+XTAL                EQU 7373000
+BAUD                EQU 115200
+BRVAL               EQU ((XTAL/BAUD)-16)
+
+FLASH_CE EQU P2.4
+
+; Commands supported by the SPI flash memory according to the datasheet
+WRITE_ENABLE     EQU 0x06  ; Address:0 Dummy:0 Num:0
+WRITE_DISABLE    EQU 0x04  ; Address:0 Dummy:0 Num:0
+READ_STATUS      EQU 0x05  ; Address:0 Dummy:0 Num:1 to infinite
+READ_BYTES       EQU 0x03  ; Address:3 Dummy:0 Num:1 to infinite
+READ_SILICON_ID  EQU 0xab  ; Address:0 Dummy:3 Num:1 to infinite
+FAST_READ        EQU 0x0b  ; Address:3 Dummy:1 Num:1 to infinite
+WRITE_STATUS     EQU 0x01  ; Address:0 Dummy:0 Num:1
+WRITE_BYTES      EQU 0x02  ; Address:3 Dummy:0 Num:1 to 256
+ERASE_ALL        EQU 0xc7  ; Address:0 Dummy:0 Num:0
+ERASE_BLOCK      EQU 0xd8  ; Address:3 Dummy:0 Num:0
+READ_DEVICE_ID   EQU 0x9f  ; Address:0 Dummy:2 Num:1 to infinite
+
+;-------------------------------------------;
+;                Variables                  ;
+;-------------------------------------------;
+
+dseg at 0x30
+Count1ms:   ds 2; Used to determine when half a second has passed
+w:		    ds 3; 24-bit play counter. Decremented in CCU ISR
+ctemp:      ds 2   ; current temperature
+ctime:      ds 4   ; current time
+
+rtemp:		ds 2   ; reflow  temperature
+stemp:		ds 2   ; soak temperature
+rtime:		ds 2   ; reflow time
+stime:		ds 2   ; soak time
+tt:         ds 2 ; temporary variable to hold stime 
+ttemp: 	    ds 2 ; temporary temperature
+tt1:         ds 2 
+adjust_state: ds 1
+oven_state: ds 1
+speak_delay:  ds 1
+
+x: ds 4 ;for use in math32
+y: ds 4
+bcd: ds 5
+FSMState: ds 1
+
+;-------------------------------------------;
+;                  Flags                    ;
+;-------------------------------------------;
+
+bseg
+; For each pushbutton we have a flag.  The corresponding FSM will set this
+; flags to one when a valid press of the pushbutton is detected.
+soak_time_flag:         dbit 1
+soak_temp_flag:         dbit 1
+reflow_time_flag:       dbit 1
+reflow_temp_flag:       dbit 1
+abort_flag: 		    dbit 1 
+mf:                     dbit 1
+power_flag:             dbit 1 
+preheat_flag:           dbit 1
+soak_flag:              dbit 1
+ramp_to_peak_flag:      dbit 1 
+reflow_flag:            dbit 1 
+cooling_flag:           dbit 1 
+finish_flag:            dbit 1 
+peak_flag:              dbit 1
+bcd_flag: 				dbit 1
+Sec5:                   dbit 1
+ ;-------------------------------------------;
+;         Pins and Constant Strings         ;
+;-------------------------------------------;
+cseg
+LCD_RS equ P0.5
+LCD_RW equ P0.6
+LCD_E  equ P0.7
+LCD_D4 equ P1.2
+LCD_D5 equ P1.3
+LCD_D6 equ P1.4
+LCD_D7 equ P1.6
+
+;---------------------------------;
+; Button/Switch Pins		  ;
+;---------------------------------;
+sw_start_stop equ P2.6
+;sw_updown     equ P2.1
+button_updown equ P3.1
+button_state  equ P3.0
+button_reset  equ P0.3
+button_start  equ P2.6
+SOUND         EQU P2.7
+;---------------------------------;
+; Temperature and Power		  ;
+;---------------------------------;
+TEMP_IN 	equ P1.7
+POWER_OUT 	equ P0.2
+
+;---------------------------------;
+; Strings		  ;
+;---------------------------------;
+
+setsoaktime:
+DB 'SOAK TIME', 0
+
+setsoaktemperature:
+DB 'SOAK TEMP', 0
+
+setreflowtemperature:
+DB 'REFLOW TEMP', 0
+
+setreflowtime:
+DB 'REFLOW TIME', 0
+
+displaystate1:
+DB 'Preheat ', 0
+
+displaystate2:
+DB 'Soaking ', 0
+
+displaystate3:
+DB 'Ramping ', 0
+
+displaystate4:
+DB 'Reflow  ', 0
+
+displaystate5:
+DB 'Cooling ', 0
+
+displayabort:
+DB 'Aborting...', 0
+
+HexAscii: 
+db '0123456789ABCDEF'
+
+defaultstate:
+DB 'Press button to' , 0 
+
+defaulstate2:
+DB 'adjust or start' , 0
+
+finished:
+DB 'FINISHED!!' , 0
+
+displayabort2:
+DB 'PRESS RESET',0
+
+;---------------------------------;
+; Initializing Timer0             ;
+;---------------------------------;
+Timer0_Init:
+	mov a, TMOD
+	anl a, #0xf0 ; Clear the bits for timer 0
+	orl a, #0x01 ; Configure timer 0 as 16-timer
+	mov TMOD, a
+	mov TH0, #high(TIMER0_RELOAD)
+	mov TL0, #low(TIMER0_RELOAD)
+	; Enable the timer and interrupts
+    setb ET0  ; Enable timer 0 interrupt
+    ;setb TR0  ; Start timer 0
+	ret
+
+;---------------------------------;
+; ISR for timer 0.  Set to execute;
+; every 1/4096Hz to generate a    ;
+; 2048 Hz square wave at pin P3.7 ;
+;---------------------------------;
+Timer0_ISR:
+	clr TF0  ; Timer 0 doesn't clear TF2 automatically. Do it in ISR
+		     ; The two registers used in the ISR must be saved in the stac
+    push acc
+	push psw
+	
+	; Increment the 16-bit one mili second counter
+	inc Count1ms+0    ; Increment the low 8-bits first
+	mov a, Count1ms+0 ; If the low 8-bits overflow, then increment high 8-bits
+	jnz Inc_Done
+	inc Count1ms+1
+	
+	
+
+Inc_Done:
+	; Check if full second has passed
+	mov a, Count1ms+0
+	cjne a, #low(55), donee ; Warning: this instruction changes the carry flag!
+	mov a, Count1ms+1
+	cjne a, #high(55), donee
+	setb bcd_flag
+	ljmp accumulate_loop_start 
+done5:
+	;cpl Sec5
+
+
+    Wait_Milli_Seconds(#0x01)
+    clr bcd_flag
+
+	mov a,ctime+0
+	cjne a,#0x99, adjust_lower
+	mov ctime+0, #0x00
+	mov a,ctime+1
+	add a,#0x01
+	da a
+	mov ctime+1,a 
+	ljmp done_adjust
+adjust_lower:
+    add a,#0x01
+    da a
+	mov ctime+0,a
+done_adjust:
+    clr a
+    
+	mov Count1ms+0, a
+	mov Count1ms+1, a
+	; Increment the current time counter
+	ljmp Timer0_ISR_done
+
+done2:
+	clr soak_flag
+	ljmp donee
+donee:
+	pop psw
+	pop acc
+	reti
+Timer0_ISR_done:
+	jb preheat_flag, donee
+	jnb soak_flag, done1
+	mov a, tt1+0
+
+	cjne a, #0x99, dec_tt
+	mov a, #0x0
+	mov tt1+0, a
+	mov a, tt+1
+	add a,#0x01
+	da a
+	mov tt1+1,a
+	;mov tt+1,#0x00
+	;mov tt+0,#0x99
+	;Set_Cursor(2,7)
+;	Display_BCD(tt+1)
+;	Set_Cursor(2,9)
+;	Display_BCD(tt+0)
+	ljmp donee
+dec_tt:
+	mov a, tt1+0
+	add a, #0x01
+	da a
+	mov tt1+0,a
+	ljmp donee
+done1:
+	jb ramp_to_peak_flag, donee
+	jnb reflow_flag, donee
+	mov a, tt+0
+	cjne a, tt1+0, done3a 
+	ljmp done3
+done3a:
+	mov a, tt+0
+	add a, #0x1
+	da a
+	cjne a, tt1+0, done3b
+	ljmp done3	
+done3b:
+	mov a, tt1+0
+	add a, #0x01 
+	da a
+	add a, #0x01
+	da a 
+	mov tt1+0,a 
+	ljmp donee
+done3:
+    jb peak_flag, done4
+	setb peak_flag
+	mov tt1+0,#0x00
+	mov tt1+1, #0x00
+	ljmp donee
+done4:
+	clr POWER_OUT
+	Set_Cursor(2,14)
+	WriteData(#'O')
+	Set_Cursor(2,15)
+	WriteData(#'F')
+	Set_Cursor(2,16)
+	WriteData(#'F')
+	
+	clr reflow_flag
+	ljmp donee
+
+;---------------------------------;
+; Initializing CCU                ;
+;---------------------------------;
+CCU_Init:
+	mov TH2, #high(CCU_RELOAD)
+	mov TL2, #low(CCU_RELOAD)
+	mov TOR2H, #high(CCU_RELOAD)
+	mov TOR2L, #low(CCU_RELOAD)
+	mov TCR21, #10000000b ; Latch the reload value
+	mov TICR2, #10000000b ; Enable CCU Timer Overflow Interrupt
+	setb ECCU ; Enable CCU interrupt
+	setb TMOD20 ; Start CCU timer
+	ret
+
+;---------------------------------;
+; ISR for CCU.  Used to playback  ;
+; the WAV file stored in the SPI  ;
+; flash memory.                   ;
+;---------------------------------;
+CCU_ISR:
+	mov TIFR2, #0 ; Clear CCU Timer Overflow Interrupt Flag bit. Actually, it clears all the bits!
+	setb P2.6 ; To check the interrupt rate with oscilloscope.
+	
+	; The registers used in the ISR must be saved in the stack
+	push acc
+	push psw
+	
+	; Check if the play counter is zero.  If so, stop playing sound.
+	mov a, w+0
+	orl a, w+1
+	orl a, w+2
+	jz stop_playing
+	
+	; Decrement play counter 'w'.  In this implementation 'w' is a 24-bit counter.
+	mov a, #0xff
+	dec w+0
+	cjne a, w+0, keep_playing
+	dec w+1
+	cjne a, w+1, keep_playing
+	dec w+2
+	
+keep_playing:
+
+	lcall Send_SPI ; Read the next byte from the SPI Flash...
+	mov AD1DAT3, a ; and send it to the DAC
+	
+	sjmp CCU_ISR_Done
+
+stop_playing:
+	clr TMOD20 ; Stop CCU timer
+	setb FLASH_CE  ; Disable SPI Flash
+
+CCU_ISR_Done:	
+	pop psw
+	pop acc
+	clr P2.6
+	reti
+
+
+; Sounds we need in the SPI flash: 0; 1; 2; 3; 4; 5; 6; 7; 8; 9; 10; 11; 12; 13; 14; 15; 16; 17; 18; 19; 20; 30; 40; 50; minutes; seconds;
+; Approximate index of sounds in file 'stop_watch.wav'
+; This was generated using: computer_sender -Asw_index.asm -S2000 stop_watch.wav
+; Approximate index of sounds in file 'uwu.wav'
+; Approximate index of sounds in file 'fuckme7.wav'
+sound_index:
+    db 0x00, 0x00, 0x2d ; 0 
+    db 0x00, 0x31, 0x88 ; 1 
+    db 0x00, 0x6f, 0xfe ; 2 
+    db 0x00, 0xad, 0x21 ; 3 
+    db 0x00, 0xf1, 0x8b ; 4 
+    db 0x01, 0x37, 0x8c ; 5 
+    db 0x01, 0x81, 0xd2 ; 6 
+    db 0x01, 0xcf, 0x06 ; 7 
+    db 0x02, 0x1b, 0x0e ; 8 
+    db 0x02, 0x50, 0xff ; 9 
+    db 0x02, 0x98, 0xb2 ; 10 
+    db 0x02, 0xdd, 0x06 ; 11 
+    db 0x03, 0x2b, 0x28 ; 12 
+    db 0x03, 0x78, 0x79 ; 13 
+    db 0x03, 0xc8, 0x78 ; 14 
+    db 0x04, 0x1f, 0xe2 ; 15 
+    db 0x04, 0x73, 0xea ; 16 
+    db 0x04, 0xcf, 0x6d ; 17 
+    db 0x05, 0x34, 0x7b ; 18 
+    db 0x05, 0x7f, 0xca ; 19 
+    db 0x05, 0xdb, 0x2d ; 20 
+    db 0x06, 0x27, 0xad ; 21 
+    db 0x06, 0x6a, 0xaf ; 22 
+    db 0x06, 0xb3, 0x94 ; 23 
+    db 0x06, 0xfb, 0x69 ; 24 
+    db 0x07, 0x51, 0xf3 ; 25 
+    db 0x07, 0xa9, 0xac ; 26 
+    db 0x07, 0xeb, 0x4c ; 27 
+    db 0x08, 0x38, 0x9c ; 28 
+    db 0x08, 0x88, 0x9e ; 29 
+    db 0x08, 0xfe, 0xb1 ; 30 
+    db 0x09, 0x7d, 0x22 ; 31 
+    db 0x09, 0xe9, 0x62 ; 32 
+    db 0x0a, 0x2b, 0x40 
+
+; Size of each sound in 'sound_index'
+Size_length:
+    db 0x00, 0x31, 0x5b ; 0 
+    db 0x00, 0x3e, 0x76 ; 1 
+    db 0x00, 0x3d, 0x23 ; 2 
+    db 0x00, 0x44, 0x6a ; 3 
+    db 0x00, 0x46, 0x01 ; 4 
+    db 0x00, 0x4a, 0x46 ; 5 
+    db 0x00, 0x4d, 0x34 ; 6 
+    db 0x00, 0x4c, 0x08 ; 7 
+    db 0x00, 0x35, 0xf1 ; 8 
+    db 0x00, 0x47, 0xb3 ; 9 
+    db 0x00, 0x44, 0x54 ; 10 
+    db 0x00, 0x4e, 0x22 ; 11 
+    db 0x00, 0x4d, 0x51 ; 12 
+    db 0x00, 0x4f, 0xff ; 13 
+    db 0x00, 0x57, 0x6a ; 14 
+    db 0x00, 0x54, 0x08 ; 15 
+    db 0x00, 0x5b, 0x83 ; 16 
+    db 0x00, 0x65, 0x0e ; 17 
+    db 0x00, 0x4b, 0x4f ; 18 
+    db 0x00, 0x5b, 0x63 ; 19 
+    db 0x00, 0x4c, 0x80 ; 20 
+    db 0x00, 0x43, 0x02 ; 21 30
+    db 0x00, 0x48, 0xe5 ; 22 40
+    db 0x00, 0x47, 0xd5 ; 23 50
+    db 0x00, 0x56, 0x8a ; 24 60
+    db 0x00, 0x57, 0xb9 ; 25 70
+    db 0x00, 0x41, 0xa0 ; 26 80
+    db 0x00, 0x4d, 0x50 ; 27 90
+    db 0x00, 0x50, 0x02 ; 28 hundred
+    db 0x00, 0x76, 0x13 ; 29 The temp is
+    db 0x00, 0x7e, 0x71 ; 30 Degrees celsius
+    db 0x00, 0x6c, 0x40 ; 31 fucking gay
+    db 0x00, 0x41, 0xde ; 32 
+
+
+
+; The sound and its length from the two tables above is passed in the accumulator.
+Play_Sound_Using_Index:
+	setb SOUND ; Turn speaker on
+	clr TMOD20 ; Stop the CCU from playing previous request
+	setb FLASH_CE
+	
+	; There are three bytes per row in our tables, so multiply index by three
+	mov b, #3
+	mul ab
+	mov R0, a ; Make a copy of the index*3
+	
+	clr FLASH_CE ; Enable SPI Flash
+	mov a, #READ_BYTES
+	lcall Send_SPI
+	; Set the initial position in memory of where to start playing
+	mov dptr, #sound_index
+	mov a, R0
+	movc a, @a+dptr
+	lcall Send_SPI
+	inc dptr
+	mov a, R0
+	movc a, @a+dptr
+	lcall Send_SPI
+	inc dptr
+	mov a, R0
+	movc a, @a+dptr
+	lcall Send_SPI
+	; Now set how many bytes to play
+	mov dptr, #Size_Length
+	mov a, R0
+	movc a, @a+dptr
+	mov w+2, a
+	inc dptr
+	mov a, R0
+	movc a, @a+dptr
+	mov w+1, a
+	inc dptr
+	mov a, R0
+	movc a, @a+dptr
+	mov w+0, a
+	
+	mov a, #0x00 ; Request first byte to send to DAC
+	lcall Send_SPI
+	
+	setb TMOD20 ; Start playback by enabling CCU timer
+
+	ret
+
+
+;---------------------------------------------------------------------------------;
+; This is the FSM that plays minutes and seconds after the STOP button is pressed ;
+; The state diagram of this FSM is available as 'Stop_Watch_FSM.pdf'              ;
+;---------------------------------------------------------------------------------;
+FSM_Start:
+	jb Sec5, state_3 
+	;mov FSMState, #0
+	;cjne a, #0, State_3
+	;clr Sec5
+	ret
+State_3:
+	mov a, #29 ;"Temperature currently:x"
+	lcall Play_Sound_Using_Index
+	mov FSMState, #3
+State_3D:
+	mov a, FSMState
+	cjne a, #3, State_4
+	jb TMOD20, State_3D
+	mov FSMState, #4
+	sjmp State_3D
+	;hundreds place check
+State_4:
+	mov a, BCD+1
+	cjne a, #0, State_5
+	ljmp State_7
+	;play hundreds place
+State_5: 
+	mov a, BCD+1
+	lcall Play_Sound_Using_Index
+	mov FSMState, #5
+State_5D:
+	mov a,FSMState
+	cjne a, #5, State_6
+	jb TMOD20, State_5D
+	mov FSMState, #6
+	sjmp State_5D
+State_6:
+	mov a,#28 ;100 deg call
+	lcall Play_Sound_Using_Index
+	mov FSMState, #6
+State_6D:
+	mov a, FSMState
+	cjne a, #6, State_7
+	jb TMOD20, State_6D
+	mov FSMState, #7
+	sjmp State_6D
+State_7:
+	mov a, BCD
+	swap a
+	anl a, #0x0F
+	cjne a, #1, State_9
+State_8:
+	mov a, BCD
+	lcall Play_Sound_Using_Index
+	mov FSMState, #8
+State_8D:
+	mov a, FSMState
+	cjne a, #8, State_12
+	jb TMOD20, State_8D
+	mov FSMState, #9
+	sjmp State_8D	
+State_9:
+	mov a, BCD
+	swap a
+	anl a, #0x0F
+	cjne a, #0, State_11
+State_10:
+	mov a, BCD
+	anl a, #0x0F
+	lcall Play_Sound_Using_Index	
+	mov FSMState, #10
+State_10D:
+	mov a, FSMState
+	cjne a, #10, State_12
+	jb TMOD20, State_10D
+	mov FSMState, #12
+	sjmp State_10D
+State_11:
+	mov a, BCD
+	swap a
+	anl a, #0x0F
+	add a, #18
+	lcall Play_Sound_Using_Index
+	mov FSMState, #11
+State_11D:
+	mov a, FSMState
+	cjne a, #11, State_13
+	jb TMOD20, State_11D
+	mov FSMState, #12
+	sjmp State_11D
+State_12:
+	mov a, #30 ;Celsius call
+	lcall Play_Sound_Using_Index
+	mov FSMState, #12
+State_12D:
+	mov a, FSMState
+	cjne a, #12, DONE
+	jb TMOD20, State_12D
+	mov FSMState, #0
+	sjmp State_12D
+State_13:
+	mov a, BCD
+	anl a, #0x0F
+	cjne a, #0, State_10
+	ljmp State_12
+DONE:
+	clr Sec5
+	mov FSMState, #0
+	ret
+; End of FMS that plays minutes and seconds
+
+
+
+
+
+;---------------------------------;
+; Initial configuration of ports. ;
+; After reset the default for the ;
+; pins is 'Open Drain'.  This     ;
+; routine changes them pins to    ;
+; Quasi-bidirectional like in the ;
+; original 8051.                  ;
+; Notice that P1.2 and P1.3 are   ;
+; always 'Open Drain'. If those   ;
+; pins are to be used as output   ;
+; they need a pull-up resistor.   ;
+;---------------------------------;
+Ports_Init:
+    ; Configure all the ports in bidirectional mode:
+    mov P0M1, #00H
+    mov P0M2, #00H
+    mov P1M1, #00H
+    mov P1M2, #00H ; WARNING: P1.2 and P1.3 need 1 kohm pull-up resistors if used as outputs!
+    mov P2M1, #00H
+    mov P2M2, #00H
+    mov P3M1, #00H
+    mov P3M2, #00H
+	ret
+
+;---------------------------------;
+; Sends a byte via serial port    ;
+;---------------------------------;
+putchar:
+	jbc	TI,putchar_L1
+	sjmp putchar
+putchar_L1:
+	mov	SBUF,a
+	ret
+
+;---------------------------------;
+; Receive a byte from serial port ;
+;---------------------------------;
+getchar:
+	jbc	RI,getchar_L1
+	sjmp getchar
+getchar_L1:
+	mov	a,SBUF
+	ret
+
+Wait10us:
+    mov R0, #18
+    djnz R0, $ ; 2 machine cycles-> 2*0.27126us*18=10us
+	ret
+
+Wait1S:
+	mov R2, #40
+L3_1:	mov R1, #250
+L2_1:	mov R0, #184
+L1_1:	djnz R0, L1_1 ; 2 machine cycles-> 2*0.27126us*184=100us
+	djnz R1, L2_1 ; 100us*250=0.025s
+	djnz R2, L3_1 ; 0.025s*40=1s
+	ret
+
+
+;---------------------------------;
+; Initialize the serial port      ;
+;---------------------------------;
+InitSerialPort:
+	mov	BRGCON,#0x00
+	mov	BRGR1,#high(BRVAL)
+	mov	BRGR0,#low(BRVAL)
+	mov	BRGCON,#0x03 ; Turn-on the baud rate generator
+	mov	SCON,#0x52 ; Serial port in mode 1, ren, txrdy, rxempty
+	; Make sure that TXD(P1.0) and RXD(P1.1) are configured as bidrectional I/O
+	anl	P1M1,#11111100B
+	anl	P1M2,#11111100B
+	ret
+
+;---------------------------------;
+; Initialize ADC1/DAC1 as DAC1.   ;
+; Warning, the ADC1/DAC1 can work ;
+; only as ADC or DAC, not both.   ;
+; The P89LPC9351 has two ADC/DAC  ;
+; interfaces.  One can be used as ;
+; ADC and the other can be used   ;
+; as DAC.  Also configures the    ;
+; pin associated with the DAC, in ;
+; this case P0.4 as 'Open Drain'. ;
+;---------------------------------;
+InitDAC:
+    ; Configure pin P0.4 (DAC1 output pin) as open drain
+	orl	P0M1,   #00010000B
+	orl	P0M2,   #00010000B
+    mov ADMODB, #00101000B ; Select main clock/2 for ADC/DAC.  Also enable DAC1 output (Table 25 of reference manual)
+	mov	ADCON1, #00000100B ; Enable the converter
+	mov AD1DAT3, #0x80     ; Start value is 3.3V/2 (zero reference for AC WAV file)
+	ret
+
+;---------------------------------;
+; Change the internal RC osc. clk ;
+; from 7.373MHz to 14.746MHz.     ;
+;---------------------------------;
+Double_Clk:
+    mov dptr, #CLKCON
+    movx a, @dptr
+    orl a, #00001000B ; double the clock speed to 14.746MHz
+    movx @dptr,a
+	ret
+
+;---------------------------------;
+; Initialize the SPI interface    ;
+; and the pins associated to SPI. ;
+;---------------------------------;
+Init_SPI:
+	; Configure MOSI (P2.2), CS* (P2.4), and SPICLK (P2.5) as push-pull outputs (see table 42, page 51)
+	anl P2M1, #low(not(00110100B))
+	orl P2M2, #00110100B
+	; Configure MISO (P2.3) as input (see table 42, page 51)
+	orl P2M1, #00001000B
+	anl P2M2, #low(not(00001000B)) 
+	; Configure SPI
+	mov SPCTL, #11010000B ; Ignore /SS, Enable SPI, DORD=0, Master=1, CPOL=0, CPHA=0, clk/4
+	ret
+
+;---------------------------------;
+; Sends AND receives a byte via   ;
+; SPI.                            ;
+;---------------------------------;
+Send_SPI:
+	mov SPDAT, a
+Send_SPI_1:
+	mov a, SPSTAT 
+	jnb acc.7, Send_SPI_1 ; Check SPI Transfer Completion Flag
+	mov SPSTAT, a ; Clear SPI Transfer Completion Flag
+	mov a, SPDAT ; return received byte via accumulator
+	ret
+
+;---------------------------------;
+; SPI flash 'write enable'        ;
+; instruction.                    ;
+;---------------------------------;
+Enable_Write:
+	clr FLASH_CE
+	mov a, #WRITE_ENABLE
+	lcall Send_SPI
+	setb FLASH_CE
+	ret
+
+;---------------------------------;
+; This function checks the 'write ;
+; in progress' bit of the SPI     ;
+; flash memory.                   ;
+;---------------------------------;
+Check_WIP:
+	clr FLASH_CE
+	mov a, #READ_STATUS
+	lcall Send_SPI
+	mov a, #0x55
+	lcall Send_SPI
+	setb FLASH_CE
+	jb acc.0, Check_WIP ;  Check the Write in Progress bit
+	ret
+
+InitADC:
+	; ADC0_0 is connected to P1.7
+	; ADC0_1 is connected to P0.0
+	; ADC0_2 is connected to P2.1
+	; ADC0_3 is connected to P2.0
+    ; Configure pins P1.7, P0.0, P2.1, and P2.0 as inputs
+    orl P0M1, #00000001b
+    anl P0M2, #11111110b
+    orl P1M1, #10000000b
+    anl P1M2, #01111111b
+    orl P2M1, #00000011b
+    anl P2M2, #11111100b
+	; Setup ADC0
+	setb BURST0 ; Autoscan continuos conversion mode
+	mov	ADMODB,#0x20 ;ADC0 clock is 7.3728MHz/2
+	mov	ADINS,#0x0f ; Select the four channels of ADC0 for conversion
+	mov	ADCON0,#0x05 ; Enable the converter and start immediately
+	; Wait for first conversion to complete
+InitADC_L1:
+	mov	a,ADCON0
+	jnb	acc.3,InitADC
+	ret
+
+
+; The 8-bit hex number passed in the accumulator is converted to
+; BCD and stored in [R1, R0]
+Hex_to_bcd_8bit:
+	mov b, #100
+	div ab
+	mov R1, a   ; After dividing, a has the 100s
+	mov a, b    ; Remainder is in register b
+	mov b, #10
+	div ab ; The tens are stored in a, the units are stored in b 
+	swap a
+	anl a, #0xf0
+	orl a, b
+	mov R0, a
+	ret
+
+
+SendTemp:
+	mov dptr, #HexAscii 
+	
+	mov a, bcd+2
+	swap a
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+	mov a, bcd+2
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+
+	mov a, bcd+1
+	swap a
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+	mov a, bcd+1
+	anl a, #0xf
+	movc a, @a+dptr
+	lcall putchar
+	
+	mov a, #'\n'
+	lcall putchar	
+	ret
+	
+SendString:
+    clr a
+    movc a, @a+dptr
+    jz SendString_L1
+    lcall putchar
+    inc dptr
+    sjmp SendString  
+SendString_L1:
+	ret
+
+
+
+
+
+;Function to automatically adjust oven power depending on current and desired temperature (input a decimal in hex form)
+Temp_Set:
+    push acc 
+	mov a, ttemp+1
+	clr c 
+	cjne a, ctemp+1, carry_check
+	mov a, ttemp
+	clr c 
+	cjne a, ctemp, carry_check	
+	pop acc 			;if current temp and desired temp are the same, do nothing
+	ret
+Carry_check:
+	jc Power_off 	;if ctemp larger than desired temp, turn off power
+	sjmp Power_on	;else turn on power
+Power_off:
+	Set_Cursor(2,14)
+	WriteData(#'O')
+	Set_Cursor(2,15)
+	WriteData(#'F')
+	Set_Cursor(2,16)
+	WriteData(#'F')
+    clr POWER_OUT 
+	pop acc 
+	ret 
+Power_on:
+	Set_Cursor(2,14)
+	WriteData(#'O')
+	Set_Cursor(2,15)
+	WriteData(#'N')
+	Set_Cursor(2,16)
+	WriteData(#' ')
+	setb POWER_OUT
+	pop acc
+	ret 
+;---------------------------------;
+; Main program. Includes hardware ;
+; initialization and 'forever'    ;
+; loop.                           ;
+;---------------------------------;
+main:
+	; Initialization of hardware
+	mov SP, #0x7F
+    lcall Ports_Init
+    lcall LCD_4BIT 
+    lcall InitADC
+	lcall InitSerialPort
+    lcall Init_SPI
+    lcall CCU_Init
+    lcall Timer0_Init
+	; Turn off all the LEDs
+	; mov LEDRA, #0 ; LEDRA is bit addressable
+	; mov LEDRB, #0 ; LEDRB is NOT bit addresable
+	setb EA   ; Enable Global interrupts
+    ; Initialize variables
+	clr abort_flag
+	clr peak_flag
+    clr mf
+	clr POWER_OUT
+    setb soak_temp_flag
+    setb soak_time_flag
+    setb reflow_temp_flag
+    setb reflow_time_flag
+	setb preheat_flag
+	setb soak_flag
+	setb ramp_to_peak_flag
+	setb reflow_flag
+	setb cooling_flag
+	setb finish_flag
+	setb bcd_flag
+	mov speak_delay, #0x00
+	clr Sec5
+	mov ctemp, #0
+   	mov rtemp, #0x17   ; minimum reflow  temperature
+	mov rtemp+1, #0x02;
+	mov stemp, #0x30   ; minimum soak temperature
+	mov stemp+1, #0x01
+	mov ctime+0, #0x00   ; current time
+	mov ctime+1, #0x00
+	mov stime+0, #0x60  ; soak time
+	mov stime+1, #0x00
+	mov rtime, #0x30   ; reflow time   
+	mov rtime+1, #0x00
+	mov tt+0, #0x00
+	mov tt+1, #0x00
+	mov tt1+0, #0x00
+	mov tt1+1, #0x00
+	mov x+0, #0x0
+	mov x+1, #0x0
+    ljmp Default_state
+	; After initialization the program stays in this 'forever' loop
+	   ;starts off in default display screen until button pressed
+    
+Default_state:
+	
+    Set_Cursor(1,1)
+    Send_Constant_String(#defaultstate)
+    Set_Cursor(2,1)
+    Send_Constant_String(#defaulstate2)
+	Set_Cursor(1,16)
+	WriteData(#' ')
+    Set_Cursor(2,16)
+	WriteData(#' ')
+   
+    jb button_state, param_change
+	Wait_Milli_Seconds(#50)	
+	jb button_state, param_change
+	jnb button_state, $
+	
+	setb TR0
+    WriteCommand(#0x01)
+	mov ctime+0, #0x00
+	mov ctime+1, #0x00      ; just got here but not going to start_oven
+	Wait_Milli_Seconds(#50)
+    ljmp start_oven
+
+param_change:	  
+    jb button_updown, loop
+	Wait_Milli_Seconds(#50)	
+	jb button_updown, loop
+	jnb button_updown, $
+    
+check_flag:
+	WriteCommand(#0x01)
+    jb soak_temp_flag, to_soak_temp
+    jb soak_time_flag, to_soak_time
+    jb reflow_temp_flag, to_reflow_temp
+    jb reflow_time_flag, to_reflow_time
+    
+	ljmp loop 
+
+to_soak_temp:
+    ljmp soak_temp
+to_soak_time:
+    ljmp soak_time
+to_reflow_temp:
+    ljmp reflow_temp
+to_reflow_time:
+    ljmp reflow_time
+
+loop:
+    ljmp Default_state
+
+to_abort:
+    WriteCommand(#0x01)
+    ljmp abort
+
+start_oven:
+	lcall FSM_Start
+    lcall check_abort
+    jb abort_flag, to_abort
+	 
+start_oven1:
+   	mov ctemp+0, bcd+1 	;store calculated temperature into x
+	mov ctemp+1, bcd+2
+
+	Set_Cursor(2,1) 	; display current time
+	Display_BCD(ctime+1)
+	Set_Cursor(2,3)
+	Display_BCD(ctime+0)
+	Set_Cursor(2,5)
+	WriteData(#'s')
+	
+    Set_Cursor(1,9)
+	WriteData(#' ')
+	Set_Cursor(1,10) ; display current time 
+	Display_BCD(bcd+2)
+	Set_Cursor(1,12)
+	Display_BCD(bcd+1)
+	Set_Cursor(1,14)
+	WriteData(#223) ;degrees character
+	Set_Cursor(1,15)
+	WriteData(#'C')
+	Set_Cursor(1,16)
+	WriteData(#' ')
+    
+	jb button_reset, check_stop_button
+	Wait_Milli_Seconds(#50)	
+	jb button_reset, check_stop_button
+	jnb button_reset, $
+     
+	ljmp main
+
+check_stop_button: 
+    jb button_updown, check_state_flag 
+	Wait_Milli_Seconds(#50)	
+	jb button_updown, check_state_flag
+	jnb button_updown, $
+	
+
+	jb preheat_flag, check_state_flag 
+	jb soak_flag, check_state_flag 
+	jb ramp_to_peak_flag, check_state_flag 
+	jnb reflow_flag, check_state_flag 
+	clr POWER_OUT
+	setb peak_flag
+	clr reflow_flag
+
+check_state_flag:
+	jb preheat_flag, to_preheat_state
+	jb soak_flag, to_soak_state
+	jb ramp_to_peak_flag, to_ramp_to_peak_state
+	jb reflow_flag, to_reflow_state
+	jb cooling_flag, to_cooling_state
+     
+    	WriteCommand(#0x01)
+
+display_finish:
+    clr TR0
+	clr POWER_OUT
+	Set_Cursor(1,1)
+	Send_Constant_String(#finished)
+
+	;jb button_reset, display_finish
+	;Wait_Milli_Seconds(#50)	
+	;jb button_reset, display_finish
+;	jnb button_reset, $
+    
+	sjmp $
+
+	ljmp main
+
+to_preheat_state:
+    ljmp preheat_state
+to_soak_state:
+    ljmp soak_state
+to_ramp_to_peak_state:
+    ljmp ramp_to_peak_state
+to_reflow_state:
+    ljmp reflow_state
+to_cooling_state:
+    ljmp cooling_state
+
+
+
+    
+    
+check_abort:
+    	mov a, ctemp+1
+    	cjne a, #0x02, abort_return
+	mov a, ctemp+0
+	clr c
+	subb a, #0x43
+	jc abort_return
+	;cjne a, #0x43, abort_return
+	setb abort_flag
+abort_return:		
+		ljmp start_oven1 
+abort:
+   	Set_Cursor(1,1)
+	Send_Constant_String(#displayabort)
+    Set_Cursor(2,1)
+    Send_Constant_String(#displayabort2)
+    clr POWER_OUT
+    
+	jb button_reset, abort; if the 'button_updown' button is not pressed skip
+	Wait_Milli_Seconds(#50)	; Debounce delay.  This macro is also in 'LCD_4bit.inc'
+	jb button_reset, abort  ; if the 'BOOT' button is not pressed skip (loops repeatedly without increment while button pressed)
+	jnb button_reset, $
+    
+	clr abort_flag
+	ljmp Default_state
+
+accumulate_loop_start:
+    ; Take 256 (4^4) consecutive measurements of ADC0 channel 0 at about 10 us intervals and accumulate in x
+	Load_x(0)
+    mov x+0, AD0DAT3
+    mov R7, #255
+    lcall Wait10us
+accumulate_loop:
+    mov y+0, AD0DAT3
+    mov y+1, #0
+    mov y+2, #0
+    mov y+3, #0
+    lcall add32
+    lcall Wait10us
+	djnz R7, accumulate_loop
+	
+	; Now divide by 16 (2^4)
+	Load_Y(16)
+	lcall div32
+	; x has now the 12-bit representation of the temperature
+	
+	; Convert to temperature (C)
+	Load_Y(33000) ; Vref is 3.3V
+	lcall mul32
+	Load_Y(((1<<12)-1)) ; 2^12-1
+	lcall div32
+	Load_Y(27300)
+	lcall sub32
+	
+	;lcall hex2bcd
+
+	forever_loop_2:	
+	mov R4, x+0
+	mov R5, x+1
+
+	Load_x(0)
+    mov x+0, AD0DAT0
+
+	Load_Y(330)
+	lcall mul32
+	Load_Y(255)
+	lcall div32
+	Load_Y(74)
+	lcall mul32
+	Load_Y(0)
+	mov a,#0
+	mov a, R4
+	mov y+0,a
+	mov a,#0
+	mov a, R5
+	mov y+1,a
+	lcall add32
+    	lcall hex2bcd
+	lcall SendTemp
+    
+	;mov ctemp+0, x+0 	;store calculated temperature into x
+	;mov ctemp+1, x+1
+	;mov ctemp+2, x+2
+	
+	; Send to PUTTy, with 2 decimal digits to show that it actually works
+	;lcall Wait1S
+ljmp done5
+
+
+preheat_state:
+    Set_Cursor(1,1)
+	Send_Constant_String(#displaystate1)
+	;mov a, stemp ; a equals setting temp lower bit
+    	;clr c 
+	;subb a, ctemp
+	;jc state1_2
+	mov ttemp+0, stemp+0
+	mov ttemp+1,stemp+1
+	lcall Temp_Set
+	mov a, stemp+1
+	cjne a, ctemp+1, state1_2
+	mov a, stemp
+	cjne a, ctemp, state1_2
+    ljmp start_oven 
+state1_2:
+	jc done_ramp_to_soak
+    ljmp start_oven
+done_ramp_to_soak:
+    clr preheat_flag
+	mov tt+0, stime+0
+	mov tt+1, stime+1 
+	ljmp start_oven
+
+
+soak_state:
+    Set_Cursor(1,1)
+	Send_Constant_String(#displaystate2)
+	lcall Temp_Set
+	mov a, tt1+0
+	cjne a, tt+0, bruh
+	clr soak_flag
+	mov tt+0,rtime+0
+	mov tt+1,#0x00
+	mov tt1+0, #0x00
+	mov tt1+1, #0x00
+bruh:
+    ljmp start_oven
+
+ramp_to_peak_state:
+    Set_Cursor(1,1)
+	Send_Constant_String(#displaystate3)
+	mov ttemp+0, rtemp+0
+	mov ttemp+1, rtemp+1
+	lcall Temp_Set
+	mov a, rtemp+1
+	cjne a, ctemp+1, state3_2
+	mov a, rtemp
+	cjne a, ctemp, state3_2    
+	ljmp start_oven 
+state3_2:
+	jc done_ramp_to_reflow
+    ljmp start_oven
+done_ramp_to_reflow:
+    clr ramp_to_peak_flag
+	mov tt+0, rtime+0 
+	mov tt+1, #0x00
+	ljmp start_oven
+
+reflow_state:
+    Set_Cursor(1,1)
+	Send_Constant_String(#displaystate4)
+	mov ttemp+0, #0x30
+	mov ttemp+1, #0x02
+	jb peak_flag, turn_off_power
+	lcall Temp_Set
+	ljmp start_oven
+turn_off_power:
+    clr POWER_OUT 
+	ljmp start_oven
+
+cooling_state:
+    
+    ;mov ttemp+0, #0x30
+	;mov ttemp+1, #0x00
+	;lcall Temp_Set
+	clr POWER_OUT
+    ;mov a, ctemp+1
+    ;cjne a, ttemp+1, to_cooling 
+	;mov a, ctemp+0
+	;cjne a, ttemp+0, to_cooling
+	;clr cooling_flag
+	Wait_Milli_Seconds (#50)
+	Set_Cursor(1,1)
+	Send_Constant_String(#displaystate5)
+	ljmp start_oven
+
+
+
+	
+	
+
+    
+    
+    
+    
+
+    
+
+
+;in each of these, change display and read button_updown to adjust
+;also read button_state to inc adjust_state
+soak_temp:
+    Set_Cursor(1,1)
+	Send_Constant_String(#setsoaktemperature)
+	Set_Cursor(2,1)
+	Display_BCD(stemp+1)
+	Set_Cursor(2,3)
+	Display_BCD(stemp)
+
+check_button_state:
+	jb button_state, check_updown_button
+	Wait_Milli_Seconds(#50)	
+	jb button_state, check_updown_button
+	jnb button_state, $
+    
+    cpl soak_temp_flag
+    ljmp check_flag
+
+    
+check_updown_button:	
+    jb button_updown, soak_temp  ;check if button_down is pressed. 
+	Wait_Milli_Seconds(#50)	
+	jb button_updown, soak_temp 
+	jnb button_updown, $
+   
+
+inc_soak_temp:
+    mov stemp+1, #0x01
+   	mov a, stemp
+   	add a, #0x01
+    da a
+    cjne a, #0x71, inc_soak_temp_1
+    mov a, #0x30
+    mov stemp, a
+    ljmp check_button_state
+
+inc_soak_temp_1:
+    mov stemp, a 
+    ljmp check_button_state
+
+soak_time:
+    Set_Cursor(1,1)
+	Send_Constant_String(#setsoaktime)
+	Set_Cursor(2,1)
+	Display_BCD(stime+1)
+	Set_Cursor(2,3)
+	Display_BCD(stime+0)
+	
+check_button_state_2:
+    jb button_state, check_updown_button_2
+    Wait_Milli_Seconds(#50)	
+    jb button_state, check_updown_button_2
+    jnb button_state, $
+    
+    clr soak_time_flag
+    ljmp check_flag
+    
+check_updown_button_2:  
+    jb button_updown, soak_time ; check if button_down is pressed. 
+    Wait_Milli_Seconds(#50)	
+    jb button_updown, soak_time
+    jnb button_updown, $
+    
+	;jb sw_updown, dec_soak_time
+    
+inc_soak_time:
+    mov a, stime+0
+	cjne a, #0x99, inc_soak_time_upper
+    mov stime+1, #0x01
+	mov stime+0, #0x00
+    ljmp check_button_state_2
+inc_soak_time_1:
+   mov stime+0,a
+   ljmp check_button_state_2
+inc_soak_time_upper:
+    add a, #0x01
+    da a
+	cjne a, #0x21, inc_soak_time_1
+    mov a, #0x60
+    mov stime+0, a
+	mov stime+1, #0x00
+	ljmp inc_soak_time_1
+
+
+dec_soak_time:
+    mov a, stime+0
+	cjne a, #0x00, dec_soak_time_2
+    mov stime+0, #0x99
+	mov stime+1,#0x00
+	ljmp dec_soak_time_1
+dec_soak_time_2:
+    dec a 
+    da a
+    cjne a, #0x59,dec_soak_time_1
+    mov stime+0, #0x20
+	mov stime+1, #0x01
+    ljmp check_button_state_2
+dec_soak_time_1:
+   ljmp check_button_state_2
+    
+
+reflow_temp:
+    Set_Cursor(1,1)
+	Send_Constant_String(#setreflowtemperature)    
+	Set_Cursor(2,1)
+	Display_BCD(rtemp+1)
+    Set_Cursor(2,3)
+    Display_BCD(rtemp)
+	
+check_button_state_3:
+    jb button_state, check_updown_button_3 ; check if button_down is pressed. 
+    Wait_Milli_Seconds(#50)	
+    jb button_state, check_updown_button_3
+	jnb button_state, $
+
+    clr reflow_temp_flag
+	ljmp check_flag
+
+
+check_updown_button_3:  
+    jb button_updown, reflow_temp ; check if button_down is pressed. 
+    Wait_Milli_Seconds(#50)	
+    jb button_updown, reflow_temp
+    jnb button_updown, $
+    
+
+
+inc_reflow_temp:
+    mov rtemp+1, #0x02
+    mov a, rtemp+0
+	add a, #0x01
+    da a
+	cjne a, #0x41, inc_reflow_temp_1
+    mov rtemp+0, #0x17
+    ljmp check_button_state_3
+inc_reflow_temp_1:
+    mov rtemp+0, a
+    ljmp check_button_state_3
+
+
+reflow_time:
+    Set_Cursor(1,1)
+	Send_Constant_String(#setreflowtime) 
+	Set_Cursor(2,1)   
+	Display_BCD(rtime)
+
+check_button_state_4:
+    jb button_state, check_updown_button_4
+    Wait_Milli_Seconds(#50)
+    jb button_state, check_updown_button_4
+    jnb button_state, $
+    
+	setb soak_temp_flag
+	setb soak_time_flag
+	setb reflow_temp_flag
+	setb reflow_time_flag
+	ljmp Default_state
+
+check_updown_button_4:  
+    jb button_updown, reflow_time ; check if button_down is pressed. 
+    Wait_Milli_Seconds(#50)	
+    jb button_updown, reflow_time
+    jnb button_updown, $
+    
+	
+inc_reflow_time:
+    mov rtime+1, #0x00
+	mov a, rtime+0
+	add a, #0x01
+	da a
+	cjne a, #0x61, inc_reflow_time_1
+	mov a, #0x30
+	mov rtime+0, a
+	ljmp check_button_state_4
+inc_reflow_time_1:
+    mov rtime+0, a
+	ljmp check_button_state_4
+
+
+end     
+      
+
+
+
+
+
+
+
+
+
+
+
+
